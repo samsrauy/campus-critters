@@ -636,13 +636,25 @@ function openTower(){
 }
 
 /* =====================================================================
-   BATTLE — spend carried mana to play cards; guardian strikes back each turn
+   SIEGE — live raid battles. The guardian strikes on a timer at whoever holds
+   its attention (threat). Computer-controlled students join with MMO roles.
    ===================================================================== */
-let B = null;
+const STRIKE_MS = 9000, STRIKE_MS_ENRAGED = 7000, DRAW_MS = 1800, WARD_PER_ALLY = 12;
+const ROLES = {
+  Tank:    { icon:'🛡️', types:['Might'],        every:6000, text:'Taunts the guardian to draw its strikes, and raises a shield' },
+  Healer:  { icon:'💚', types:['Wild'],         every:4500, text:'Restores resolve to whoever is hurt worst' },
+  DPS:     { icon:'⚔️', types:['Gear'],         every:3500, text:'Deals steady damage' },
+  Support: { icon:'📣', types:['Lore','Muse'],  every:5500, text:'Jams the next strike or boosts your next card' },
+};
+let B = null, siegeLoop = null;
 function effPow(c){ const g = B.g; let p = c.pow + boostFor(c.type, B.site);
   if (TYPES[c.type].beats===g.type) p += 2; if (T(g.type).beats===c.type) p -= 1; return Math.max(1,p); }
 const rollIntent = g => 3 + g.level*2 + Math.floor(Math.random()*3);
-function drawOne(){ if (!B.draw.length){ if (!B.discard.length) return; B.draw = shuffle(B.discard); B.discard = []; } B.hand.push(B.draw.pop()); }
+function drawOne(){ if (!B.draw.length){ if (!B.discard.length) return; B.draw = shuffle(B.discard); B.discard = []; } B.hand.push(B.draw.pop()); B.handDirty = true; }
+const phaseOf = g => g.hp <= g.maxHp*0.25 ? 3 : g.hp <= g.maxHp*0.5 ? 2 : 1;
+const alive = () => [B.me, ...B.party].filter(p => p.resolve > 0);
+function blog(t){ B.log.unshift(t); B.log = B.log.slice(0,30); B.logDirty = true; }
+
 function challenge(id){
   const all = S.deck.map(u => S.cards.find(c => c.uid===u)).filter(Boolean), deck = all.filter(c => !tiredLeft(c.uid));
   if (all.length < DECK_MIN) return toast(`You need at least ${DECK_MIN} cards in your deck (🃏 Cards tab).`);
@@ -651,50 +663,142 @@ function challenge(id){
   if (!deck.some(canPay)) return toast('You can\'t afford any card in your deck. Visit wells that match your cards\' colors.');
   const s = siteById(id), g = id==='tower' ? currentWarden() : S.guardians[id];
   if (!g) return toast('Nothing to fight here right now.');
-  B = { site:s, g, draw:shuffle(deck.map(c => Object.assign({},c))), hand:[], discard:[], resolve:RESOLVE, block:0, rally:0,
-        disrupted:false, played:new Set(), log:[`⚠️ If you lose, every card you played gets tired for ${TIRED_MIN} min, and each has a ${Math.round(BREAK_CHANCE*100)}% chance to break for good. Retreating only tires them.`, 'The guardian rises to meet you. Spend mana to play cards, then end your turn.'], over:false };
-  B.intent = rollIntent(B.g); for (let k=0;k<HAND_SIZE;k++) drawOne(); renderBattle();
+  // Computer-controlled students answer the call: 2–3 of them, each in a role
+  const n = 2 + (Math.random()<0.5 ? 1 : 0), now = Date.now();
+  const party = shuffle(Object.keys(ROLES)).slice(0,n).map((role,i) => {
+    const R = ROLES[role], type = pick(Math.random, R.types.filter(t => t!==g.type).length ? R.types.filter(t => t!==g.type) : R.types);
+    const c = makeCard(Math.random, type, 1);
+    return { id:'a'+i, name:c.name, emoji:c.emoji, type, role, resolve:18, max:18, block:0, threat:role==='Tank' ? 20 : 0, next: now + 1500 + Math.random()*R.every };
+  });
+  B = { site:s, g, draw:shuffle(deck.map(c => Object.assign({},c))), hand:[], discard:[], party,
+        me:{ id:'me', name:'You', emoji:'🧑‍🎓', role:'You', resolve:RESOLVE, max:RESOLVE, block:0, threat:5 },
+        ward: WARD_PER_ALLY*party.length, wardMax: WARD_PER_ALLY*party.length, rally:0, disrupt:0,
+        intent: rollIntent(g), nextStrike: now + STRIKE_MS, nextDraw: now + DRAW_MS, phase: phaseOf(g),
+        played:new Set(), spent:0, over:false, handDirty:true, logDirty:true,
+        log:[`⚠️ If you lose, every card you played gets tired for ${TIRED_MIN} min, and each has a ${Math.round(BREAK_CHANCE*100)}% chance to break for good. Retreating only tires them.`,
+             `⚔️ The siege begins! ${party.length} students answered the call: ${party.map(p => ROLES[p.role].icon+' '+p.role).join(', ')}. The guardian raised a ward of ${WARD_PER_ALLY*party.length} against the crowd.`] };
+  for (let k=0;k<HAND_SIZE;k++) drawOne();
+  renderBattle(true);
+  clearInterval(siegeLoop); siegeLoop = setInterval(siegeTick, 200);
 }
-function renderBattle(){
-  const g = B.g, hit = Math.max(0, B.intent - (B.disrupted?2:0));
-  openSheet(`<h2>⚔️ ${esc(B.site.name)}</h2>
-    ${guardianPanel(B.site,g)}
-    <div class="box" style="margin-top:8px">Next strike: <b>🗡️ ${hit}</b>${B.disrupted ? ' <span class="boost">(disrupted −2)</span>' : T(B.g.type).beats===null && !TYPE_KEYS.some(t => TYPES[t].beats===B.g.type) ? ` <span class="dim">· it can't be disrupted</span>` : ` <span class="dim">· play a card it's weak to for −2</span>`}</div>
-    <div><span class="stat">❤️ Resolve ${B.resolve}/${RESOLVE}</span><span class="stat">🛡️ Block ${B.block}</span>${B.rally?`<span class="stat">📣 +${B.rally}</span>`:''}</div>
-    <div class="mstrip" style="border-radius:10px;margin-top:6px">${document.getElementById('manaStrip').innerHTML}</div>
-    <div class="hand">${B.hand.map((c,k) => cardHTML(c,{ eff:effPow(c)+B.rally, cls: canPay(c) ? 'pickable' : 'cant', attr:`data-act="play" data-arg="${k}"` })).join('')}</div>
-    <div class="wheel">${WHEEL} · Draw ${B.draw.length} · Discard ${B.discard.length}</div>
-    <div class="log">${B.log.slice(0,8).map(l => `<div>${esc(l)}</div>`).join('')}</div>
-    <div class="row"><button data-act="retreat">🏳️ Retreat</button><button class="primary" data-act="endturn">End turn</button></div>`, true);
+
+function hitGuardian(dmg, src){
+  const g = B.g; let soak = 0;
+  if (B.ward > 0){ soak = Math.min(B.ward, dmg); B.ward -= soak; }
+  g.hp = Math.max(0, g.hp - (dmg - soak));
+  const ph = phaseOf(g);
+  if (ph > B.phase){ B.phase = ph;
+    blog(ph===2 ? `🔥 The ${gName(g.type)} is enraged! It strikes faster and harder.` : `☄️ The ${gName(g.type)} is desperate! Its strikes now hit EVERYONE.`); }
+  return soak;
+}
+
+function siegeTick(){
+  if (!B || B.over){ clearInterval(siegeLoop); return; }
+  const now = Date.now(); let changed = false;
+  // allies act
+  for (const a of B.party){
+    if (a.resolve<=0 || now < a.next) continue;
+    a.next = now + ROLES[a.role].every*(0.85 + Math.random()*0.3); changed = true;
+    if (a.role==='Tank'){ const top = Math.max(...alive().map(p => p.threat)); a.threat = top + 10; a.block += 6; blog(`🛡️ ${a.emoji} ${a.name} taunts the guardian and raises a shield (+6 block).`); }
+    else if (a.role==='Healer'){ const t = alive().sort((x,y) => x.resolve/x.max - y.resolve/y.max)[0];
+      const h = Math.min(4, t.max - t.resolve); if (h>0){ t.resolve += h; a.threat += 2; blog(`💚 ${a.emoji} ${a.name} heals ${t===B.me ? 'you' : t.name} for ${h}.`); } }
+    else if (a.role==='DPS'){ let d = 5 + Math.floor(Math.random()*4) + boostFor(a.type, B.site);
+      if (TYPES[a.type].beats===B.g.type) d += 2; a.threat += d;
+      const soak = hitGuardian(d, a); blog(`⚔️ ${a.emoji} ${a.name} hits for ${d}${soak ? ` (${soak} into the ward)` : ''}.`);
+      if (B.g.hp<=0){ allyWin(a); return; } }
+    else if (a.role==='Support'){
+      if (!B.disrupt){ B.disrupt = 3; blog(`📣 ${a.emoji} ${a.name} jams the guardian. Its next strike is −3.`); }
+      else { B.rally += 3; B.handDirty = true; blog(`📣 ${a.emoji} ${a.name} cheers you on. Your next card hits +3.`); } }
+  }
+  // guardian strikes
+  if (now >= B.nextStrike){
+    changed = true;
+    const dmg = Math.max(0, B.intent + (B.phase>=2 ? 2 : 0) - B.disrupt); B.disrupt = 0;
+    const targets = B.phase===3 ? alive() : [alive().sort((x,y) => y.threat - x.threat)[0]];
+    const each = B.phase===3 ? Math.ceil(dmg*0.6) : dmg;
+    for (const t of targets){
+      const ab = Math.min(t.block, each); t.block -= ab; t.resolve = Math.max(0, t.resolve - (each - ab)); t.threat = Math.floor(t.threat/2);
+      blog(`${gEmoji(B.g.type)} The guardian strikes ${t===B.me ? '<b>YOU</b>' : t.emoji+' '+t.name} for ${each}${ab ? ` (${ab} blocked)` : ''}.`);
+      if (t!==B.me && t.resolve<=0) blog(`😵 ${t.emoji} ${t.name} is knocked out of the siege.`);
+    }
+    B.intent = rollIntent(B.g); B.nextStrike = now + (B.phase>=2 ? STRIKE_MS_ENRAGED : STRIKE_MS);
+    if (B.me.resolve<=0){ lose('Your resolve breaks.'); return; }
+  }
+  // draw
+  if (now >= B.nextDraw){ B.nextDraw = now + DRAW_MS; if (B.hand.length < HAND_SIZE){ drawOne(); changed = true; } }
+  updateBattle(changed);
+}
+
+function memberRow(p){
+  const top = alive().sort((x,y) => y.threat - x.threat)[0] === p;
+  return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;${p.resolve<=0?'opacity:.35':''}">
+    <span style="font-size:20px;width:26px">${p.emoji}</span>
+    <span style="flex:1;font-size:12px"><b>${p===B.me ? 'You' : esc(p.name)}</b> <span class="dim">${p===B.me ? '' : ROLES[p.role].icon+' '+p.role}</span>${top ? ' 🎯' : ''}
+      <div class="bar" style="height:5px;margin-top:2px"><i style="width:${100*p.resolve/p.max}%;background:#4cd964"></i></div></span>
+    <span style="font-size:11px;width:62px;text-align:right">❤️${p.resolve}${p.block ? ' 🛡️'+p.block : ''}</span></div>`;
+}
+function renderBattle(full){
+  openSheet(`<h2>⚔️ Siege: ${esc(B.site.name)}</h2>
+    <div id="bGuard"></div>
+    <div class="box" id="bStrike" style="margin-top:8px"></div>
+    <div class="box" id="bParty"></div>
+    <div class="mstrip" id="bMana" style="border-radius:10px;margin-top:6px"></div>
+    <div class="hand" id="bHand"></div>
+    <div class="wheel" id="bDeck"></div>
+    <div class="log" id="bLog"></div>
+    <div class="row"><button data-act="retreat">🏳️ Retreat</button></div>`, true);
+  updateBattle(true);
+}
+function updateBattle(changed){
+  const $ = id => document.getElementById(id); if (!$('bStrike')) return;
+  const g = B.g, secs = Math.max(0, Math.ceil((B.nextStrike - Date.now())/1000)), top = alive().sort((x,y) => y.threat - x.threat)[0];
+  const dmg = Math.max(0, B.intent + (B.phase>=2 ? 2 : 0) - B.disrupt);
+  $('bStrike').innerHTML = `${B.phase===3 ? '☄️' : '🗡️'} Next strike in <b>${secs}s</b>: <b>${B.phase===3 ? Math.ceil(dmg*0.6)+' to everyone' : dmg+' at '+(top===B.me ? 'YOU' : top.emoji+' '+esc(top.name))}</b>
+    ${B.disrupt ? ` <span class="boost">(jammed −${B.disrupt})</span>` : ''}${B.phase===2 ? ' <span style="color:#ff9b5e">🔥 enraged</span>' : ''}
+    <div class="bar" style="margin-top:6px"><i style="width:${100*secs*1000/(B.phase>=2?STRIKE_MS_ENRAGED:STRIKE_MS)}%;background:#ff9b5e"></i></div>`;
+  if (!changed) return;
+  $('bGuard').innerHTML = guardianPanel(B.site, g) + (B.wardMax ? `<div style="font-size:12px;margin-top:4px">🔰 Crowd ward ${B.ward}/${B.wardMax}<div class="bar" style="height:5px"><i style="width:${100*B.ward/B.wardMax}%;background:#9ecbff"></i></div></div>` : '');
+  $('bParty').innerHTML = `<div class="dim" style="font-size:11px;margin-bottom:2px">SIEGE PARTY · 🎯 = the guardian's current target</div>` + [B.me, ...B.party].map(memberRow).join('');
+  $('bMana').innerHTML = document.getElementById('manaStrip').innerHTML;
+  $('bDeck').textContent = `Draw ${B.draw.length} · Discard ${B.discard.length} · You draw a card every ${DRAW_MS/1000}s`;
+  if (B.handDirty){ B.handDirty = false;
+    $('bHand').innerHTML = B.hand.map((c,k) => cardHTML(c,{ eff:effPow(c)+B.rally, cls: canPay(c) ? 'pickable' : 'cant', attr:`data-act="play" data-arg="${k}"` })).join('') || '<p class="dim">Drawing…</p>'; }
+  if (B.logDirty){ B.logDirty = false; $('bLog').innerHTML = B.log.slice(0,10).map(l => `<div>${l.replace(/<(?!\/?b>)/g,'&lt;')}</div>`).join(''); }
 }
 function playCard(k){
   if (B.over) return; const c = B.hand[k]; if (!c) return;
   if (!canPay(c)) return toast(`Needs ${c.cost} ${c.type} mana (colorless ◇ can cover the gap).`);
-  const usedC = pay(c.type, c.cost); B.spent = (B.spent||0) + c.cost; B.played.add(c.uid); const d = effPow(c) + B.rally; B.rally = 0;
-  B.g.hp = Math.max(0, B.g.hp - d);
-  let line = `${c.emoji} ${c.name} hits for ${d}${usedC ? ` (◇${usedC} colorless)` : ''}`;
-  if (TYPES[c.type].beats===B.g.type){ B.disrupted = true; line += ' (super effective, guardian disrupted)'; }
-  if (c.ab==='Guard'){ const b = Math.ceil(c.pow/2); B.block += b; line += `, 🛡️ +${b} block`; }
-  if (c.ab==='Mend'){ B.resolve = Math.min(RESOLVE, B.resolve+3); line += ', 💚 +3 resolve'; }
-  if (c.ab==='Rally'){ B.rally = 3; line += ', 📣 next card +3'; }
-  B.hand.splice(k,1); B.discard.push(c);
+  const usedC = pay(c.type, c.cost); B.spent += c.cost; B.played.add(c.uid);
+  const d = effPow(c) + B.rally; B.rally = 0; B.me.threat += d;
+  const soak = hitGuardian(d, B.me);
+  let line = `${c.emoji} You play ${esc(c.name)}: ${d} damage${soak ? ` (${soak} into the ward)` : ''}${usedC ? ` (◇${usedC} colorless)` : ''}`;
+  if (TYPES[c.type].beats===B.g.type){ B.disrupt += 2; line += ', super effective (next strike −2)'; }
+  if (c.ab==='Guard'){ const b = Math.ceil(c.pow/2); B.me.block += b; B.me.threat += 15; line += `, 🛡️ +${b} block and you taunt`; }
+  if (c.ab==='Mend'){ const t = alive().sort((x,y) => x.resolve/x.max - y.resolve/y.max)[0]; const h = Math.min(3, t.max - t.resolve); t.resolve += h; line += `, 💚 heals ${t===B.me ? 'you' : t.name} ${h}`; }
+  if (c.ab==='Rally'){ B.rally = 3; line += ', 📣 your next card +3'; }
+  B.hand.splice(k,1); B.discard.push(c); B.handDirty = true;
   if (c.ab==='Swift'){ drawOne(); line += ', ⚡ drew a card'; }
-  B.log.unshift(line); save();
+  blog(line); save();
   if (B.g.hp<=0) return win(c);
-  renderBattle();
+  updateBattle(true);
 }
-function endTurn(){
-  if (B.over) return;
-  const dmg = Math.max(0, B.intent - (B.disrupted?2:0)), absorbed = Math.min(B.block, dmg);
-  B.resolve -= dmg - absorbed;
-  B.log.unshift(`${gEmoji(B.g.type)} The guardian strikes for ${dmg}${absorbed ? ` (${absorbed} blocked)` : ''}.`);
-  B.block = 0; B.disrupted = false; B.intent = rollIntent(B.g);
-  while (B.hand.length < HAND_SIZE && (B.draw.length || B.discard.length)) drawOne();
-  if (B.resolve<=0) return lose('Your resolve breaks.');
-  renderBattle();
+function allyWin(a){
+  B.over = true; clearInterval(siegeLoop); const s = B.site, old = B.g;
+  if (s.id==='tower'){ old.beaten = a.type; const lost = S.artifact && S.artifact.holder==='you'; S.artifact = { holder:a.type, since:Date.now() };
+    news(`🔔 In your siege, ${a.name} (${a.type}) landed the final blow on the Bell Warden. ${a.type} students now hold the Carillon${lost ? ', taken from YOU' : ''}.`); }
+  else { delete S.guardians[s.id];
+    const empties = SITES.filter(x => !S.guardians[x.id] && x.id!==s.id), home = empties.filter(x => x.aff===a.type), dest = pick(Math.random, home.length ? home : empties);
+    S.guardians[dest.id] = makeGuardian(a.type, 'rival', 1);
+    news(`⚔️ Your siege toppled the ${old.type} guardian at ${s.name}, but ${a.name} landed the final blow. A ${a.type} ${gName(a.type)} rose at ${dest.name}.`); }
+  save(); renderSites(); updateBanner();
+  openSheet(`<h2>🤝 The siege succeeded, but not by your hand</h2>
+    <p>${a.emoji} <b>${esc(a.name)}</b> (${ROLES[a.role].icon} ${a.role}, ${T(a.type).icon} ${a.type}) landed the final blow, so the summon goes to <b>${a.type}</b>${s.id==='tower' ? ', along with the Carillon' : ''}.</p>
+    <p class="dim">Your cards aren't tired, since your side won. Next time, watch the guardian's HP and save a strong card for the last hit.</p>
+    <div class="row"><button class="primary" data-act="close">Back to map</button></div>`);
 }
+
 function lose(why, retreat){
-  B.over = true; B.g.upd = Date.now();
+  B.over = true; clearInterval(siegeLoop); B.g.upd = Date.now();
   const broken = [], tired = [];
   for (const uid of B.played){ const c = S.cards.find(x => x.uid===uid); if (!c) continue;
     if (!retreat && Math.random() < (c.rar>=2 ? BREAK_CHANCE_RARE : BREAK_CHANCE)){
@@ -712,7 +816,7 @@ function lose(why, retreat){
 }
 let pendingSummon = null;
 function win(final){
-  B.over = true; const s = B.site, old = B.g;
+  B.over = true; clearInterval(siegeLoop); const s = B.site, old = B.g;
   if (s.id==='tower'){
     old.beaten = 'you'; const had = S.artifact && S.artifact.holder; S.artifact = { holder:'you', since:Date.now() };
     const grant = Math.min(ARTIFACT_GRANT, COLORLESS_MAX - S.mana.Colorless); S.mana.Colorless += grant;
@@ -819,6 +923,7 @@ function showHelp(){
     <p>🎁 <b>Packs</b> pop up around campus for a few minutes and then vanish. Walk into a pack's square to open it. Packs near a guardian usually hold that guardian's faction.</p>
     <p>🃏 <b>Decks</b> hold ${DECK_MIN}–${DECK_MAX} cards. Every card costs mana to play, so a fight spends what you gathered.</p>
     <p>💔 <b>Losing hurts.</b> Every card you played in a lost fight is tired for ${TIRED_MIN} min, and each has a ${Math.round(BREAK_CHANCE*100)}% chance to <b>break</b> and be gone for good (rare cards are tougher). Retreating only tires them. Keep collecting packs, because a deep collection is your insurance.</p>
+    <p>⚔️ <b>Sieges are live.</b> Other students join you in a fight, each in a role: 🛡️ tanks draw the guardian's strikes, 💚 healers keep everyone standing, ⚔️ damage dealers chip away, and 📣 support jams strikes or boosts your cards. The guardian strikes every few seconds at whoever has its attention (🎯). Your Guard cards taunt, Mend heals the most-hurt ally, and Rally boosts your next card. Bigger crowds face a tougher ward, and at half HP the guardian gets angry. <b>Whoever lands the final blow decides which faction rises.</b></p>
     <p>🛡️ <b>Guardians.</b> Only ${MAX_GUARDIANS} can stand at once. Defeat one and its seat goes empty. The faction of your <b>final card</b> summons a guardian at an empty seat you choose. Guardians make their faction's cards stronger everywhere and draw those cards to nearby packs.</p>
     <p>👑 <b>Defend.</b> Rival students raid guardians. Tend yours with mana to fortify it, and its well gives you extra mana.</p>
     <div class="wheel">${WHEEL}</div>
@@ -865,7 +970,7 @@ function openSheet(html, locked=false){ sheetLocked = locked; document.getElemen
 function closeSheet(){ sheetLocked = false; document.getElementById('modal').hidden = true; }
 document.getElementById('modal').addEventListener('click', e => { if (e.target.id==='modal' && !sheetLocked) closeSheet(); });
 const ACT = {
-  close: closeSheet, well: drawMana, tend, challenge: id => challenge(id), play: k => playCard(+k), endturn: endTurn,
+  close: closeSheet, well: drawMana, tend, challenge: id => challenge(id), play: k => playCard(+k),
   retreat: () => lose('You retreat.', true), summon, movesite: moveSite, copysites: copySites,
   editor: () => { S.editor = !S.editor; save(); showHelp(); }, reset: (a,btn) => resetGame(btn),
   autodeck: autoDeck, cleardeck: () => { S.deck = []; save(); renderCards(); },
