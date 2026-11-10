@@ -264,7 +264,9 @@ const RIVAL_TICK_MIN = 5;                       // prototype pace: rival faction
 const GUARDIAN_REGEN = 3, GUARDIAN_REGEN_MIN = 10;
 const SITE_RANGE_M = 80, PACK_RANGE_M = 40;
 const DECK_MIN = 6, DECK_MAX = 12, HAND_SIZE = 4, RESOLVE = 20;
-const MANA_REGEN_MIN = 5, MANA_REGEN_CAP = 5;          // every 5 min, each color below 5 regains 1
+const MANA_REGEN_MIN = 5, MANA_REGEN_CAP = 3;          // every 5 min, each color below 3 regains 1
+const KEEPER_RESPAWN_MIN = 20, KEEPER_REWARD = 4, KEEPER_BLESS = 2;   // Well Keepers: solo bosses at every site
+const ATTUNE_HOURS = 2, ATTUNE_MAX = 3;                // each win: +1 attunement (regen +1/tick, cap +3), stacks to 3
 const SURGE_MS = 4000, SURGE_MAX = 6;                  // in a siege: +1 battle mana every 4 s (pays for any card)
 const RAID_MIN = 4, RAID_MAX = 7, RAID_START_CHANCE = 0.6, RAID_SEEN_M = 500;
 const TIRED_MIN = 60, BREAK_CHANCE = 0.15, BREAK_CHANCE_RARE = 0.07;   // after a loss: played cards tire; some break
@@ -354,7 +356,7 @@ function makeCard(r, type, rar){
    STATE — single-player prototype keeps everything in this browser.
    Multiplayer: S.guardians + S.news move to the server (SQLite); the rest stays per-player.
    ===================================================================== */
-let S = { cards:[], deck:[], tired:{}, raids:{}, lastRegen:0, mana:null, artifact:null, warden:null, wells:{}, opened:{}, guardians:{}, lastTick:0, news:[], mode:'gps', nextId:1,
+let S = { cards:[], deck:[], tired:{}, raids:{}, attune:{}, lastRegen:0, mana:null, artifact:null, warden:null, wells:{}, opened:{}, guardians:{}, lastTick:0, news:[], mode:'gps', nextId:1,
           seenHelp:false, siteOverrides:{}, editor:false, summoned:0, toppled:0, started:false };
 function load(){ try { const s = JSON.parse(localStorage.getItem(STORE_KEY)); if (s) S = Object.assign(S, s); } catch(e){}
   if (!S.mana || typeof S.mana!=='object'){ S.mana = { Colorless:0 }; TYPE_KEYS.forEach(t => S.mana[t] = 2); } }
@@ -367,7 +369,9 @@ function pay(type, cost){ let left = cost; const a = Math.min(S.mana[type], left
 function manaRegen(){ const step = MANA_REGEN_MIN*60000; if (!S.lastRegen) S.lastRegen = Date.now();
   const n = Math.min(MANA_REGEN_CAP, Math.floor((Date.now()-S.lastRegen)/step)); if (n<=0) return;
   S.lastRegen += Math.floor((Date.now()-S.lastRegen)/step)*step;
-  TYPE_KEYS.forEach(t => { if (S.mana[t] < MANA_REGEN_CAP) S.mana[t] = Math.min(MANA_REGEN_CAP, S.mana[t] + n); }); }
+  TYPE_KEYS.forEach(t => { const l = attuneLvl(t), cap = MANA_REGEN_CAP + 3*l;
+    if (S.mana[t] < cap) S.mana[t] = Math.min(cap, S.mana[t] + n*(1+l)); }); }
+const attuneLvl = t => { const a = S.attune && S.attune[t]; return a && a.until > Date.now() ? a.lvl : 0; };
 function save(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch(e){} hud(); }
 function addCard(c, origin){ const card = Object.assign({}, c, { uid:S.nextId++, origin, got:new Date().toLocaleDateString('en-CA') });
   S.cards.push(card); if (S.deck.length < DECK_MAX) S.deck.push(card.uid); return card; }
@@ -523,7 +527,7 @@ function setPos(lat,lng){
   if (cellRect) cellRect.setBounds(cellBounds(i,j)); else cellRect = L.rectangle(cellBounds(i,j), { color:'#2f8cff', weight:1, fillOpacity:.08, interactive:false }).addTo(map);
   renderPacks(); updateBanner();
 }
-function wellReady(id){ return Date.now() - (S.wells[id]||0) >= WELL_COOLDOWN_MIN*60000; }
+function wellReady(id){ return Date.now() - (S.wells[id]||0) >= KEEPER_RESPAWN_MIN*60000; }
 function renderSites(){
   siteLayer.clearLayers();
   for (const s of SITES){
@@ -560,7 +564,7 @@ function updateBanner(){
   b.textContent = `${S.mode==='test' ? '👆 ' : ''}${packs} pack${packs===1?'':'s'} nearby · ${guardianList().length}/${MAX_GUARDIANS} guardians${mine ? ' · 👑 '+mine+' yours' : ''}`;
 }
 function hud(){ if (!S.mana) return; document.getElementById('manaStrip').innerHTML =
-  TYPE_KEYS.map(t => `<span style="--tc:${T(t).color}" title="${t} mana">${T(t).icon}${S.mana[t]}</span>`).join('') +
+  TYPE_KEYS.map(t => { const l = attuneLvl(t); return `<span style="--tc:${T(t).color}" title="${t} mana${l ? ', attunement '+l : ''}">${T(t).icon}${S.mana[t]}${l ? `<sup style="font-size:9px">🔋${l}</sup>` : ''}</span>`; }).join('') +
   `<span style="--tc:#fff" title="Colorless mana: pays for any card">◇${S.mana.Colorless}</span>`; }
 
 /* =====================================================================
@@ -579,17 +583,30 @@ function tryPack(p){
     <p class="dim" style="text-align:center">${S.deck.length<DECK_MAX ? 'New cards go into your deck while it has room.' : 'Your deck is full. Swap cards in the 🃏 Cards tab.'}</p>
     <div class="row"><button class="primary" data-act="close">Nice</button></div>`);
 }
-function drawMana(arg){
-  const [id, chosen] = String(arg).split('|'), s = siteById(id);
+/* Well Keepers — a solo boss guards every site's well. Beat it for mana and attunement. */
+const keeperType = id => { const s = siteById(id); return s.aff || pick(rngFrom('commons|'+id+'|'+Math.floor(Date.now()/3600000)), TYPE_KEYS); };
+function keeperFor(id){ const t = keeperType(id), s = siteById(id), lvl = 1 + attuneLvl(t), c = makeCard(rngFrom('keeper|'+id+'|'+t), t, 1);
+  return { type:t, keeper:true, level:lvl, maxHp:58+12*lvl, hp:58+12*lvl, emoji:c.emoji, name:`${c.name}, Keeper of ${s.name}`,
+           flavor:`It guards the ${t} well at ${s.name}, and it doesn't share.` }; }
+function fightKeeper(id){ const s = siteById(id);
   if (distToMe(s.lat,s.lng) > SITE_RANGE_M) return toast('Get closer to the well.');
-  if (!wellReady(id)) return toast(`This well refills in ${fmtMin(WELL_COOLDOWN_MIN*60000-(Date.now()-S.wells[id]))}.`);
-  const color = s.aff || chosen; if (!color) return;
-  const g = S.guardians[id], bless = g && g.owner==='you' ? WELL_BLESS : 0;
-  const give = Math.min((s.aff ? WELL_GIVE : COMMONS_GIVE) + bless, MANA_MAX - S.mana[color]);
-  const art = S.artifact && S.artifact.holder==='you' ? Math.min(ARTIFACT_WELL_BONUS, COLORLESS_MAX - S.mana.Colorless) : 0;
-  if (give<=0 && art<=0) return toast(`Your ${color} mana is already full (${MANA_MAX}).`);
-  S.mana[color] += give; S.mana.Colorless += art; S.wells[id] = Date.now(); save(); renderSites();
-  toast(`${T(color).icon} +${give} ${color} mana${bless ? ' (blessed)' : ''}${art ? ` · ◇ +${art} from the Carillon` : ''}`); openSite(id);
+  if (!wellReady(id)) return toast(`The keeper returns in ${fmtMin(KEEPER_RESPAWN_MIN*60000-(Date.now()-S.wells[id]))}.`);
+  challenge(id, true); }
+function winKeeper(){
+  const s = B.site, t = B.g.type, now = Date.now(), g = S.guardians[s.id];
+  S.wells[s.id] = now;
+  const bless = g && g.owner==='you' ? KEEPER_BLESS : 0, give = Math.min(KEEPER_REWARD + bless, MANA_MAX - S.mana[t]); S.mana[t] += give;
+  const art = S.artifact && S.artifact.holder==='you' ? Math.min(ARTIFACT_WELL_BONUS, COLORLESS_MAX - S.mana.Colorless) : 0; S.mana.Colorless += art;
+  const lvl = Math.min(ATTUNE_MAX, attuneLvl(t) + 1); S.attune[t] = { lvl, until: now + ATTUNE_HOURS*3600000 };
+  news(`💧 You beat the ${t} Well Keeper at ${s.name}. ${t} attunement ${lvl}.`);
+  save(); renderSites(); hud();
+  openSheet(`<h2>💧 Well Keeper defeated!</h2>
+    <p>${T(t).icon} <b>+${give} ${t} mana</b>${bless ? ' (your guardian blessed it)' : ''}${art ? ` · ◇ +${art} from the Carillon` : ''}</p>
+    <div class="box" style="border:2px solid ${T(t).color}">🔋 <b>${T(t).icon} ${t} attunement ${lvl}/${ATTUNE_MAX}</b><br>
+      For the next ${ATTUNE_HOURS} hours, ${t} mana regenerates <b>${1+lvl}</b> every ${MANA_REGEN_MIN} min, up to <b>${MANA_REGEN_CAP+3*lvl}</b>.
+      <div class="dim" style="font-size:12px">Beat more ${t} keepers to stack it to ${ATTUNE_MAX}, but each level makes ${t} keepers tougher. Good preparation for raids.</div></div>
+    <p class="dim">This keeper returns in ${KEEPER_RESPAWN_MIN} min. Your cards aren't tired, since you won.</p>
+    <div class="row"><button class="primary" data-act="close">Back to map</button></div>`);
 }
 function tend(id){
   const g = S.guardians[id], s = siteById(id);
@@ -618,11 +635,11 @@ function plaqueHTML(id){ const p = LORE.sites[id]; if (!p) return '';
   return `<div class="plaque">🏛️ ${esc(p[0])}${p[1] ? ` <a href="${p[1]}" target="_blank" rel="noopener">Read more →</a>` : ''}</div>`; }
 function guardianPanel(s,g){
   const weak = TYPE_KEYS.filter(t => TYPES[t].beats===g.type);
-  return `<div class="gpanel" style="--tc:${T(g.type).color}"><div class="big">${gEmoji(g.type)}</div><div class="info">
-    <b>${g.owner==='you'?'👑 Your ':''}${T(g.type).icon} ${g.type} ${gName(g.type)}</b> · Lv ${g.level}
+  return `<div class="gpanel" style="--tc:${T(g.type).color}"><div class="big">${g.emoji || gEmoji(g.type)}</div><div class="info">
+    <b>${g.name ? T(g.type).icon+' '+esc(g.name) : `${g.owner==='you'?'👑 Your ':''}${T(g.type).icon} ${g.type} ${gName(g.type)}`}</b> · Lv ${g.level}
     <div class="bar hp" style="margin:6px 0"><i style="width:${100*g.hp/g.maxHp}%"></i></div>
     <span class="stat">❤️ ${g.hp}/${g.maxHp}</span>${g.owner==='you' ? `<span class="stat">🛡️ Fort ${g.fort}/3</span>` : ''}
-    ${LORE.guardians[g.type] ? `<div class="flavor">“${esc(LORE.guardians[g.type])}”</div>` : ''}
+    ${(g.flavor || LORE.guardians[g.type]) ? `<div class="flavor">“${esc(g.flavor || LORE.guardians[g.type])}”</div>` : ''}
     <div class="dim" style="font-size:12px">${weak.length ? 'Weak to '+weak.map(t => TYPES[t].icon+' '+t).join(', ') : 'No weakness, no strength. Every faction fights it evenly.'}</div></div></div>`;
 }
 
@@ -631,7 +648,7 @@ function guardianPanel(s,g){
    ===================================================================== */
 function openSite(id){
   const s = siteById(id), g = S.guardians[id], d = distToMe(s.lat,s.lng), near = d <= SITE_RANGE_M;
-  const ready = wellReady(id), cd = WELL_COOLDOWN_MIN*60000 - (Date.now()-(S.wells[id]||0));
+  const ready = wellReady(id), cd = KEEPER_RESPAWN_MIN*60000 - (Date.now()-(S.wells[id]||0)), kt = keeperType(id), kl = 1 + attuneLvl(kt);
   let seat;
   if (!g) seat = `<p>⛲ <b>Empty seat.</b> Topple a guardian anywhere on campus, and your final card can summon its faction's guardian here.</p>`;
   else if (g.owner==='you') seat = guardianPanel(s,g) + `<p class="dim">Rival students raid guardians. Tending heals your guardian and fortifies it against raids (−10% raid success per level).</p>
@@ -645,11 +662,9 @@ function openSite(id){
   openSheet(`<h2>${esc(s.name)}</h2>
     ${plaqueHTML(id)}
     <p class="dim">${s.aff ? `Home turf of ${TYPES[s.aff].icon} <b>${s.aff}</b>: ${TYPES[s.aff].units}. ${s.aff} cards hit +1 here.` : 'Commons: no faction calls this home.'}</p>
-    <div class="box">💧 <b>${s.aff ? T(s.aff).icon+' '+s.aff+' well' : 'Commons well'}</b> · ${ready ? 'ready' : 'refills in '+fmtMin(cd)}
-      <div class="row" style="margin-top:8px">${s.aff
-        ? `<button class="mana" style="background:${T(s.aff).color}" data-act="well" data-arg="${id}" ${near && ready ? '' : 'disabled'}>Draw ${T(s.aff).icon} ${s.aff} mana (+${WELL_GIVE}${g && g.owner==='you' ? '+'+WELL_BLESS : ''})</button>`
-        : TYPE_KEYS.map(t => `<button class="mana" style="background:${T(t).color};flex:1 1 18%" data-act="well" data-arg="${id}|${t}" ${near && ready ? '' : 'disabled'}>${T(t).icon}+${COMMONS_GIVE}</button>`).join('')}</div>
-      ${s.aff ? '' : '<p class="dim" style="font-size:12px;margin-bottom:0">Commons wells give a smaller amount of any one color.</p>'}</div>
+    <div class="box" style="border-left:5px solid ${T(kt).color}">💧 <b>${T(kt).icon} ${kt} Well Keeper</b> · Lv ${kl} · ${ready ? 'ready to fight' : 'returns in '+fmtMin(cd)}
+      <div class="dim" style="font-size:12px;margin-top:4px">A solo fight. Win for ${T(kt).icon} +${KEEPER_REWARD} ${kt} mana and <b>${kt} attunement</b>: faster ${kt} regeneration for ${ATTUNE_HOURS} h, stacking to ${ATTUNE_MAX}. Solo losses never break cards.${s.aff ? '' : ' This commons keeper changes color every hour.'}</div>
+      <div class="row" style="margin-top:8px"><button class="mana" style="background:${T(kt).color}" data-act="keeper" data-arg="${id}" ${near && ready ? '' : 'disabled'}>${near ? '⚔️ Fight the keeper' : 'You\'re '+fmtDist(d)+' away'}</button></div></div>
     ${seat}
     ${S.editor ? `<div class="box">🛠️ <b>Site editor</b><div class="row"><button data-act="movesite" data-arg="${id}">📍 Move this site to my position</button></div></div>` : ''}
     <div class="row"><button data-act="close">Close</button></div>`);
@@ -686,22 +701,23 @@ const ROLES = {
 let B = null, siegeLoop = null;
 function effPow(c){ const g = B.g; let p = c.pow + boostFor(c.type, B.site);
   if (TYPES[c.type].beats===g.type) p += 2; if (T(g.type).beats===c.type) p -= 1; return Math.max(1,p); }
-const rollIntent = g => 3 + g.level*2 + Math.floor(Math.random()*3);
+const rollIntent = g => (g.keeper ? 2 + g.level : 3 + g.level*2) + Math.floor(Math.random()*3);
+const strikeMs = () => B.keeper ? (B.phase>=2 ? 8000 : 10000) : (B.phase>=2 ? STRIKE_MS_ENRAGED : STRIKE_MS);
 function drawOne(){ if (!B.draw.length){ if (!B.discard.length) return; B.draw = shuffle(B.discard); B.discard = []; } B.hand.push(B.draw.pop()); B.handDirty = true; }
 const phaseOf = g => g.hp <= g.maxHp*0.25 ? 3 : g.hp <= g.maxHp*0.5 ? 2 : 1;
 const alive = () => [B.me, ...B.party].filter(p => p.resolve > 0);
 function blog(t){ B.log.unshift(t); B.log = B.log.slice(0,30); B.logDirty = true; }
 
-function challenge(id){
+function challenge(id, keeper){
   const all = S.deck.map(u => S.cards.find(c => c.uid===u)).filter(Boolean), deck = all.filter(c => !tiredLeft(c.uid));
   if (all.length < DECK_MIN) return toast(`You need at least ${DECK_MIN} cards in your deck (🃏 Cards tab).`);
   if (deck.length < DECK_MIN){ const soon = Math.min(...all.filter(c => tiredLeft(c.uid)).map(c => tiredLeft(c.uid)));
     return toast(`Only ${deck.length} rested cards. You need ${DECK_MIN}. Swap in fresh cards, or wait ${fmtMin(soon)}.`); }
-  if (!deck.some(canPay)) return toast('You can\'t afford any card in your deck. Visit wells that match your cards\' colors.');
-  const s = siteById(id), g = id==='tower' ? currentWarden() : S.guardians[id];
+  if (!deck.some(c => S.mana[c.type] + S.mana.Colorless + 2 >= c.cost)) return toast('You can\'t afford any card in your deck yet. Wait for mana to regenerate, or beat a Well Keeper.');
+  const s = siteById(id), g = keeper ? keeperFor(id) : id==='tower' ? currentWarden() : S.guardians[id];
   if (!g) return toast('Nothing to fight here right now.');
   // Computer-controlled students answer the call: 2–3 of them, each in a role
-  const raid = S.raids[id], n = raid ? 4 : 2 + (Math.random()<0.5 ? 1 : 0), now = Date.now();
+  const raid = keeper ? null : S.raids[id], n = keeper ? 0 : raid ? 4 : 2 + (Math.random()<0.5 ? 1 : 0), now = Date.now();
   const party = shuffle(Object.keys(ROLES)).slice(0,n).map((role,i) => {
     const R = ROLES[role], type = raid ? raid.atk : pick(Math.random, R.types.filter(t => t!==g.type).length ? R.types.filter(t => t!==g.type) : R.types);
     const c = makeCard(Math.random, type, 1);
@@ -710,10 +726,10 @@ function challenge(id){
   B = { site:s, g, draw:shuffle(deck.map(c => Object.assign({},c))), hand:[], discard:[], party,
         me:{ id:'me', name:'You', emoji:'🧑‍🎓', role:'You', resolve:RESOLVE, max:RESOLVE, block:0, threat:5 },
         ward: raid ? 0 : WARD_PER_ALLY*party.length, wardMax: raid ? 0 : WARD_PER_ALLY*party.length, rally:0, disrupt:0, surge:2, nextSurge: now + SURGE_MS,
-        intent: rollIntent(g), nextStrike: now + STRIKE_MS, nextDraw: now + DRAW_MS, phase: phaseOf(g),
-        played:new Set(), spent:0, over:false, handDirty:true, logDirty:true,
+        intent: rollIntent(g), nextStrike: now + (keeper ? 10000 : STRIKE_MS), nextDraw: now + DRAW_MS, phase: phaseOf(g),
+        played:new Set(), spent:0, over:false, handDirty:true, logDirty:true, keeper:!!keeper,
         log:[`⚠️ If you lose, every card you played gets tired for ${TIRED_MIN} min, and each has a ${Math.round(BREAK_CHANCE*100)}% chance to break for good. Retreating only tires them.`,
-             raid ? `⚔️ You join the ${raid.atk} raid! Its ${party.length} raiders already broke the guardian's ward. Watch out: if one of them lands the final blow, ${raid.atk} rises.` : `⚔️ The siege begins! ${party.length} students answered the call: ${party.map(p => ROLES[p.role].icon+' '+p.role).join(', ')}. The guardian raised a ward of ${WARD_PER_ALLY*party.length} against the crowd.`] };
+             keeper ? `💧 The Well Keeper rises. This is a solo fight: no allies, no ward. Battle mana ⚡ builds every ${SURGE_MS/1000}s.` : raid ? `⚔️ You join the ${raid.atk} raid! Its ${party.length} raiders already broke the guardian's ward. Watch out: if one of them lands the final blow, ${raid.atk} rises.` : `⚔️ The siege begins! ${party.length} students answered the call: ${party.map(p => ROLES[p.role].icon+' '+p.role).join(', ')}. The guardian raised a ward of ${WARD_PER_ALLY*party.length} against the crowd.`] };
   for (let k=0;k<HAND_SIZE;k++) drawOne();
   renderBattle(true);
   clearInterval(siegeLoop); siegeLoop = setInterval(siegeTick, 200);
@@ -725,7 +741,8 @@ function hitGuardian(dmg, src){
   g.hp = Math.max(0, g.hp - (dmg - soak));
   const ph = phaseOf(g);
   if (ph > B.phase){ B.phase = ph;
-    blog(ph===2 ? `🔥 The ${gName(g.type)} is enraged! It strikes faster and harder.` : `☄️ The ${gName(g.type)} is desperate! Its strikes now hit EVERYONE.`); }
+    const nm = g.keeper ? 'keeper' : gName(g.type);
+    blog(ph===2 ? `🔥 The ${nm} is enraged! It strikes faster and harder.` : `☄️ The ${nm} is desperate! Its strikes now hit EVERYONE.`); }
   return soak;
 }
 
@@ -755,10 +772,10 @@ function siegeTick(){
     const each = B.phase===3 ? Math.ceil(dmg*0.6) : dmg;
     for (const t of targets){
       const ab = Math.min(t.block, each); t.block -= ab; t.resolve = Math.max(0, t.resolve - (each - ab)); t.threat = Math.floor(t.threat/2);
-      blog(`${gEmoji(B.g.type)} The guardian strikes ${t===B.me ? '<b>YOU</b>' : t.emoji+' '+t.name} for ${each}${ab ? ` (${ab} blocked)` : ''}.`);
+      blog(`${B.g.emoji || gEmoji(B.g.type)} The ${B.keeper ? 'keeper' : 'guardian'} strikes ${t===B.me ? '<b>YOU</b>' : t.emoji+' '+t.name} for ${each}${ab ? ` (${ab} blocked)` : ''}.`);
       if (t!==B.me && t.resolve<=0) blog(`😵 ${t.emoji} ${t.name} is knocked out of the siege.`);
     }
-    B.intent = rollIntent(B.g); B.nextStrike = now + (B.phase>=2 ? STRIKE_MS_ENRAGED : STRIKE_MS);
+    B.intent = rollIntent(B.g); B.nextStrike = now + strikeMs();
     if (B.me.resolve<=0){ lose('Your resolve breaks.'); return; }
   }
   // battle mana surge
@@ -777,7 +794,7 @@ function memberRow(p){
     <span style="font-size:11px;width:62px;text-align:right">❤️${p.resolve}${p.block ? ' 🛡️'+p.block : ''}</span></div>`;
 }
 function renderBattle(full){
-  openSheet(`<h2>⚔️ Siege: ${esc(B.site.name)}</h2>
+  openSheet(`<h2>${B.keeper ? '💧 Well Keeper' : '⚔️ Siege'}: ${esc(B.site.name)}</h2>
     <div id="bGuard"></div>
     <div class="box" id="bStrike" style="margin-top:8px"></div>
     <div class="box" id="bParty"></div>
@@ -794,7 +811,7 @@ function updateBattle(changed){
   const dmg = Math.max(0, B.intent + (B.phase>=2 ? 2 : 0) - B.disrupt);
   $('bStrike').innerHTML = `${B.phase===3 ? '☄️' : '🗡️'} Next strike in <b>${secs}s</b>: <b>${B.phase===3 ? Math.ceil(dmg*0.6)+' to everyone' : dmg+' at '+(top===B.me ? 'YOU' : top.emoji+' '+esc(top.name))}</b>
     ${B.disrupt ? ` <span class="boost">(jammed −${B.disrupt})</span>` : ''}${B.phase===2 ? ' <span style="color:#ff9b5e">🔥 enraged</span>' : ''}
-    <div class="bar" style="margin-top:6px"><i style="width:${100*secs*1000/(B.phase>=2?STRIKE_MS_ENRAGED:STRIKE_MS)}%;background:#ff9b5e"></i></div>`;
+    <div class="bar" style="margin-top:6px"><i style="width:${Math.min(100,100*secs*1000/strikeMs())}%;background:#ff9b5e"></i></div>`;
   if (!changed) return;
   $('bGuard').innerHTML = guardianPanel(B.site, g) + (B.wardMax ? `<div style="font-size:12px;margin-top:4px">🔰 Crowd ward ${B.ward}/${B.wardMax}<div class="bar" style="height:5px"><i style="width:${100*B.ward/B.wardMax}%;background:#9ecbff"></i></div></div>` : '');
   $('bParty').innerHTML = `<div class="dim" style="font-size:11px;margin-bottom:2px">SIEGE PARTY · 🎯 = the guardian's current target</div>` + [B.me, ...B.party].map(memberRow).join('');
@@ -837,10 +854,10 @@ function allyWin(a){
 }
 
 function lose(why, retreat){
-  B.over = true; clearInterval(siegeLoop); B.g.upd = Date.now();
+  B.over = true; clearInterval(siegeLoop); if (!B.keeper) B.g.upd = Date.now();
   const broken = [], tired = [];
   for (const uid of B.played){ const c = S.cards.find(x => x.uid===uid); if (!c) continue;
-    if (!retreat && Math.random() < (c.rar>=2 ? BREAK_CHANCE_RARE : BREAK_CHANCE)){
+    if (!retreat && !B.keeper && Math.random() < (c.rar>=2 ? BREAK_CHANCE_RARE : BREAK_CHANCE)){
       broken.push(c); S.cards = S.cards.filter(x => x.uid!==uid); S.deck = S.deck.filter(u => u!==uid); delete S.tired[uid]; }
     else { S.tired[uid] = Date.now() + TIRED_MIN*60000; tired.push(c); } }
   if (broken.length) news(`💔 ${broken.map(c => c.emoji+' '+c.name).join(', ')} broke in the fight at ${B.site.name}.`);
@@ -849,13 +866,13 @@ function lose(why, retreat){
     <p><b>Cost:</b> the ${B.spent||0} mana you spent is gone.</p>
     ${tired.length ? `<p>😴 <b>Tired for ${TIRED_MIN} min:</b> ${tired.map(c => c.emoji+' '+esc(c.name)).join(', ')}. They sit out fights until they rest.</p>` : ''}
     ${broken.length ? `<div class="box" style="border:2px solid #e0524c">💔 <b>Broken forever:</b><div class="reveal">${broken.map(c => cardHTML(c,{cls:'tired'})).join('')}</div><p class="dim" style="margin-bottom:0">Watch for packs to rebuild your deck.</p></div>`
-      : !retreat && tired.length ? '<p class="dim">Lucky: none of your cards broke this time.</p>' : ''}
-    <p>The ${gName(B.g.type)} keeps its wounds: ❤️ ${B.g.hp}/${B.g.maxHp}. It heals ${GUARDIAN_REGEN} every ${GUARDIAN_REGEN_MIN} min, so come back soon with more mana, or bring friends.</p>
+      : !retreat && tired.length && !B.keeper ? '<p class="dim">Lucky: none of your cards broke this time.</p>' : ''}
+    ${B.keeper ? '<p>Solo fights never break cards. The keeper will be waiting when you\'re ready to try again.</p>' : `<p>The ${gName(B.g.type)} keeps its wounds: ❤️ ${B.g.hp}/${B.g.maxHp}. It heals ${GUARDIAN_REGEN} every ${GUARDIAN_REGEN_MIN} min, so come back soon with more mana, or bring friends.</p>`}
     <div class="row"><button class="primary" data-act="close">Back to map</button></div>`);
 }
 let pendingSummon = null;
 function win(final){
-  B.over = true; clearInterval(siegeLoop); delete S.raids[B.site.id]; const s = B.site, old = B.g;
+  B.over = true; clearInterval(siegeLoop); if (B.keeper) return winKeeper(); delete S.raids[B.site.id]; const s = B.site, old = B.g;
   if (s.id==='tower'){
     old.beaten = 'you'; const had = S.artifact && S.artifact.holder; S.artifact = { holder:'you', since:Date.now() };
     const grant = Math.min(ARTIFACT_GRANT, COLORLESS_MAX - S.mana.Colorless); S.mana.Colorless += grant;
@@ -863,7 +880,7 @@ function win(final){
     news(`🔔 You toppled the Bell Warden at Elliott Tower and claimed the Carillon${had && had!=='you' ? ' from '+had+' students' : ''}!`);
     save(); renderSites(); updateBanner();
     openSheet(`<h2>🔔 The Carillon is yours!</h2>
-      <p>◇ +${grant} colorless mana. While you hold the Carillon, every well also gives you ◇ +${ARTIFACT_WELL_BONUS}. Colorless mana pays for any faction's cards.</p>
+      <p>◇ +${grant} colorless mana. While you hold the Carillon, every Well Keeper you beat also gives you ◇ +${ARTIFACT_WELL_BONUS}. Colorless mana pays for any faction's cards.</p>
       <p class="dim">You hold it until someone topples the next Bell Warden. Watch for the bells.</p>
       <div class="reveal">${cardHTML(trophy)}</div><div class="row"><button class="primary" data-act="close">Ring it</button></div>`);
     return; }
@@ -957,16 +974,16 @@ function renderNews(){
    ===================================================================== */
 function showHelp(){
   openSheet(`<h2>How to play</h2>
-    <p>💧 <b>Wells</b> give mana in their building's color: Kresge gives 📜 Lore, the Engineering Center gives ⚙️ Gear, and so on. Cards cost their own color. Commons wells (the Oakland Center, Hamlin) give a little of any color. Carry up to ${MANA_MAX} of each. Each well refills ${WELL_COOLDOWN_MIN} min after you use it.</p>
+    <p>💧 <b>Well Keepers.</b> A solo boss guards the well at every site, in that building's color: Kresge's is 📜 Lore, the Engineering Center's is ⚙️ Gear, and so on. Beat one for mana and <b>attunement</b>, which makes that color regenerate faster for ${ATTUNE_HOURS} hours and stacks up to ${ATTUNE_MAX}. Keepers return ${KEEPER_RESPAWN_MIN} min after you beat them, and solo losses never break cards. Commons keepers (the Oakland Center, Hamlin) change color every hour.
     <p>🔔 <b>Elliott Tower</b> belongs to no faction. A colorless Bell Warden appears there at random times. Whoever topples it holds the <b>Carillon</b>, which gives ◇ colorless mana. Colorless mana pays for any card, and wells give the holder extra. You hold the Carillon until someone topples the next Warden.</p>
     <p>🎁 <b>Packs</b> pop up around campus for a few minutes and then vanish. Walk into a pack's square to open it. Packs near a guardian usually hold that guardian's faction.</p>
     <p>🃏 <b>Decks</b> hold ${DECK_MIN}–${DECK_MAX} cards. Every card costs mana to play, so a fight spends what you gathered.</p>
-    <p>🔋 <b>Mana regenerates.</b> Every ${MANA_REGEN_MIN} min, each color below ${MANA_REGEN_CAP} regains 1, so you're never fully broke. Wells are how you stock up past that. In a siege you also gain ⚡ battle mana every ${SURGE_MS/1000}s, which pays for any card.</p>
+    <p>🔋 <b>Mana regenerates.</b> Every ${MANA_REGEN_MIN} min, each color below ${MANA_REGEN_CAP} regains 1, enough to take on a Well Keeper. Attunement raises both the rate and the cap. In any fight you also build ⚡ battle mana every ${SURGE_MS/1000}s, which pays for any card. So: beat keepers to power up, then join raids.</p>
     <p>🚨 <b>Raids.</b> Rival students raid guardians for several minutes at a time. A raided site pulses red with ⚔️. Tap it to join. Land the final blow yourself and your faction rises instead of theirs. If your own guardian is raided, tend it to heal it and weaken the raid.</p>
     <p>💔 <b>Losing hurts.</b> Every card you played in a lost fight is tired for ${TIRED_MIN} min, and each has a ${Math.round(BREAK_CHANCE*100)}% chance to <b>break</b> and be gone for good (rare cards are tougher). Retreating only tires them. Keep collecting packs, because a deep collection is your insurance.</p>
     <p>⚔️ <b>Sieges are live.</b> Other students join you in a fight, each in a role: 🛡️ tanks draw the guardian's strikes, 💚 healers keep everyone standing, ⚔️ damage dealers chip away, and 📣 support jams strikes or boosts your cards. The guardian strikes every few seconds at whoever has its attention (🎯). Your Guard cards taunt, Mend heals the most-hurt ally, and Rally boosts your next card. Bigger crowds face a tougher ward, and at half HP the guardian gets angry. <b>Whoever lands the final blow decides which faction rises.</b></p>
     <p>🛡️ <b>Guardians.</b> Only ${MAX_GUARDIANS} can stand at once. Defeat one and its seat goes empty. The faction of your <b>final card</b> summons a guardian at an empty seat you choose. Guardians make their faction's cards stronger everywhere and draw those cards to nearby packs.</p>
-    <p>👑 <b>Defend.</b> Rival students raid guardians. Tend yours with mana to fortify it, and its well gives you extra mana.</p>
+    <p>👑 <b>Defend.</b> Rival students raid guardians. Tend yours with mana to fortify it, and beating the Well Keeper at your guardian's seat gives you extra mana.</p>
     <div class="wheel">${WHEEL}</div>
     ${PREVIEW ? '<p class="dim">🧪 <b>Practice board:</b> no real map or GPS here, and places are approximate. Tap to move.</p>' : ''}
     <p>🏛️ <b>Plaques.</b> Every site carries a bit of real OU history, with a link to read more. Cards have their own stories too.</p>
@@ -1011,7 +1028,7 @@ function openSheet(html, locked=false){ sheetLocked = locked; document.getElemen
 function closeSheet(){ sheetLocked = false; document.getElementById('modal').hidden = true; }
 document.getElementById('modal').addEventListener('click', e => { if (e.target.id==='modal' && !sheetLocked) closeSheet(); });
 const ACT = {
-  close: closeSheet, well: drawMana, tend, challenge: id => challenge(id), play: k => playCard(+k),
+  close: closeSheet, keeper: fightKeeper, tend, challenge: id => challenge(id), play: k => playCard(+k),
   retreat: () => lose('You retreat.', true), summon, movesite: moveSite, copysites: copySites,
   editor: () => { S.editor = !S.editor; save(); showHelp(); }, reset: (a,btn) => resetGame(btn),
   autodeck: autoDeck, cleardeck: () => { S.deck = []; save(); renderCards(); },
