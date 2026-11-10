@@ -73,6 +73,9 @@
   @keyframes ring { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }
   .mstrip { display:flex; justify-content:space-around; gap:2px; padding:5px 6px; background:#0b0b0e; border-bottom:1px solid #2a2a30; font-size:14px; font-weight:700; }
   .mstrip span { padding:1px 6px; border-radius:10px; background:color-mix(in srgb,var(--tc) 22%,transparent); color:var(--tc); }
+  .site.raid { animation:raidpulse 1s ease-in-out infinite; }
+  .site .swords { position:absolute; left:-12px; bottom:-10px; font-size:18px; filter:drop-shadow(0 0 3px #f00); }
+  @keyframes raidpulse { 0%,100%{ box-shadow:0 0 0 3px #ff3b30, 0 0 8px 2px #ff3b30; } 50%{ box-shadow:0 0 0 5px #ff3b30, 0 0 22px 8px #ff3b30; } }
   .me { width:20px; height:20px; border-radius:50%; background:#2f8cff; border:3px solid #fff; box-shadow:0 0 0 6px rgba(47,140,255,.3); }
   .lmlabel { background:rgba(0,0,0,.72); color:#fff; border:0; font-size:10px; padding:1px 5px; box-shadow:none; }
   .lmlabel::before { display:none; }
@@ -261,6 +264,9 @@ const RIVAL_TICK_MIN = 5;                       // prototype pace: rival faction
 const GUARDIAN_REGEN = 3, GUARDIAN_REGEN_MIN = 10;
 const SITE_RANGE_M = 80, PACK_RANGE_M = 40;
 const DECK_MIN = 6, DECK_MAX = 12, HAND_SIZE = 4, RESOLVE = 20;
+const MANA_REGEN_MIN = 5, MANA_REGEN_CAP = 5;          // every 5 min, each color below 5 regains 1
+const SURGE_MS = 4000, SURGE_MAX = 6;                  // in a siege: +1 battle mana every 4 s (pays for any card)
+const RAID_MIN = 4, RAID_MAX = 7, RAID_START_CHANCE = 0.6, RAID_SEEN_M = 500;
 const TIRED_MIN = 60, BREAK_CHANCE = 0.15, BREAK_CHANCE_RARE = 0.07;   // after a loss: played cards tire; some break
 const STORE_KEY = 'oucc3';
 
@@ -348,13 +354,20 @@ function makeCard(r, type, rar){
    STATE — single-player prototype keeps everything in this browser.
    Multiplayer: S.guardians + S.news move to the server (SQLite); the rest stays per-player.
    ===================================================================== */
-let S = { cards:[], deck:[], tired:{}, mana:null, artifact:null, warden:null, wells:{}, opened:{}, guardians:{}, lastTick:0, news:[], mode:'gps', nextId:1,
+let S = { cards:[], deck:[], tired:{}, raids:{}, lastRegen:0, mana:null, artifact:null, warden:null, wells:{}, opened:{}, guardians:{}, lastTick:0, news:[], mode:'gps', nextId:1,
           seenHelp:false, siteOverrides:{}, editor:false, summoned:0, toppled:0, started:false };
 function load(){ try { const s = JSON.parse(localStorage.getItem(STORE_KEY)); if (s) S = Object.assign(S, s); } catch(e){}
   if (!S.mana || typeof S.mana!=='object'){ S.mana = { Colorless:0 }; TYPE_KEYS.forEach(t => S.mana[t] = 2); } }
 const tiredLeft = uid => Math.max(0, (S.tired[uid]||0) - Date.now());
-const canPay = c => S.mana[c.type] + S.mana.Colorless >= c.cost;
-function pay(type, cost){ const a = Math.min(S.mana[type], cost); S.mana[type] -= a; S.mana.Colorless -= cost - a; return cost - a; }
+const inSiege = () => B && !B.over;
+const canPay = c => S.mana[c.type] + S.mana.Colorless + (inSiege() ? B.surge : 0) >= c.cost;
+function pay(type, cost){ let left = cost; const a = Math.min(S.mana[type], left); S.mana[type] -= a; left -= a;
+  if (inSiege()){ const b = Math.min(B.surge, left); B.surge -= b; left -= b; }
+  S.mana.Colorless -= left; return left; }
+function manaRegen(){ const step = MANA_REGEN_MIN*60000; if (!S.lastRegen) S.lastRegen = Date.now();
+  const n = Math.min(MANA_REGEN_CAP, Math.floor((Date.now()-S.lastRegen)/step)); if (n<=0) return;
+  S.lastRegen += Math.floor((Date.now()-S.lastRegen)/step)*step;
+  TYPE_KEYS.forEach(t => { if (S.mana[t] < MANA_REGEN_CAP) S.mana[t] = Math.min(MANA_REGEN_CAP, S.mana[t] + n); }); }
 function save(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch(e){} hud(); }
 function addCard(c, origin){ const card = Object.assign({}, c, { uid:S.nextId++, origin, got:new Date().toLocaleDateString('en-CA') });
   S.cards.push(card); if (S.deck.length < DECK_MAX) S.deck.push(card.uid); return card; }
@@ -406,10 +419,32 @@ function seedGuardians(){
 }
 function regenGuardians(){
   const step = GUARDIAN_REGEN_MIN*60000;
-  for (const g of Object.values(S.guardians)){ const n = Math.floor((Date.now()-g.upd)/step);
+  for (const [id,g] of Object.entries(S.guardians)){ if (S.raids[id]){ g.upd = Date.now(); continue; } const n = Math.floor((Date.now()-g.upd)/step);
     if (n>0){ g.hp = Math.min(g.maxHp, g.hp + n*GUARDIAN_REGEN); g.upd += n*step; } }
 }
 /* Rival factions (AI stand-ins for other students) raid guardians on a timer */
+function toppleBy(id, t, how){
+  const g = S.guardians[id], site = siteById(id); delete S.guardians[id]; delete S.raids[id];
+  const empties = SITES.filter(s => !S.guardians[s.id] && s.id!==id), home = empties.filter(s => s.aff===t);
+  const dest = pick(Math.random, home.length ? home : empties);
+  S.guardians[dest.id] = makeGuardian(t, 'rival', 1 + (Math.random()<0.4 ? 1 : 0));
+  if (g.owner==='you'){ news(`💔 ${T(t).icon} ${t} students toppled YOUR ${gName(g.type)} at ${site.name}! Their ${gName(t)} rose at ${dest.name}.`); toast(`💔 Your guardian at ${site.name} fell!`); }
+  else news(`📯 ${T(t).icon} ${t} students toppled the ${g.type} ${gName(g.type)} at ${site.name}${how||''}. A ${gName(t)} rose at ${dest.name}.`);
+  return dest;
+}
+function processRaids(){
+  const now = Date.now();
+  for (const [id,r] of Object.entries(S.raids)){
+    const g = S.guardians[id]; if (!g){ delete S.raids[id]; continue; }
+    if (inSiege() && B.site.id===id){ r.last = now; continue; }   // you're in this raid: the live siege handles it
+    r.acc += r.rate * (Math.min(now, r.end) - r.last); r.last = now;
+    const d = Math.floor(r.acc); if (d>0){ g.hp = Math.max(0, g.hp - d); r.acc -= d; }
+    if (g.hp<=0){ toppleBy(id, r.atk, ' in a raid'); continue; }
+    if (now >= r.end){ delete S.raids[id];
+      if (g.owner==='you'){ if (g.fort>0) g.fort--; news(`🛡️ Your ${gName(g.type)} at ${siteById(id).name} survived the ${r.atk} raid.`); }
+      else news(`🛡️ The ${g.type} ${gName(g.type)} at ${siteById(id).name} drove off the ${r.atk} raid.`); }
+  }
+}
 function rivalCatchUp(){
   const T = RIVAL_TICK_MIN*60000; let n = 0;
   while (Date.now()-S.lastTick >= T && n < 6){ S.lastTick += T; n++; rivalEvent(); }
@@ -427,22 +462,17 @@ function rivalEvent(){
     const lost = S.artifact && S.artifact.holder==='you'; S.artifact = { holder:t, since:Date.now() };
     news(`🔔 ${T(t).icon} ${t} students toppled the Bell Warden at Elliott Tower and seized the Carillon${lost ? ' from YOU' : ''}!`);
     if (lost) toast('🔔 You lost the Carillon!'); return; }
-  const ids = Object.keys(S.guardians); if (!ids.length) return;
+  const ids = Object.keys(S.guardians).filter(id => !S.raids[id]); if (!ids.length || Math.random() > RAID_START_CHANCE) return;
   const id = pick(Math.random, ids), g = S.guardians[id], site = siteById(id); if (!site) return;
-  const chance = (g.owner==='you' ? Math.max(0.1, 0.4 - 0.1*g.fort) : 0.35) + (S.artifact && S.artifact.holder!=='you' && S.artifact.holder ? ARTIFACT_RAID_BONUS : 0);
-  if (Math.random() > chance){
-    if (g.owner==='you' && g.fort>0){ g.fort--; news(`🛡️ Your ${gName(g.type)} at ${site.name} repelled a raid. Fortification −1.`); }
-    return; }
-  delete S.guardians[id];
   const held = new Set(Object.values(S.guardians).map(x => x.type));
   let cand = TYPE_KEYS.filter(t => t!==g.type && !held.has(t)); if (!cand.length) cand = TYPE_KEYS.filter(t => t!==g.type);
-  const t = pick(Math.random, cand);
-  const empties = SITES.filter(s => !S.guardians[s.id] && s.id!==id), home = empties.filter(s => s.aff===t);
-  const dest = pick(Math.random, home.length ? home : empties);
-  S.guardians[dest.id] = makeGuardian(t, 'rival', 1 + (Math.random()<0.4 ? 1 : 0));
-  if (g.owner==='you'){ news(`💔 ${TYPES[t].icon} ${t} students toppled YOUR ${gName(g.type)} at ${site.name}! Their ${gName(t)} rose at ${dest.name}.`);
-    toast(`💔 Your guardian at ${site.name} fell!`); }
-  else news(`📯 ${TYPES[t].icon} ${t} students toppled the ${g.type} ${gName(g.type)} at ${site.name}. A ${gName(t)} rose at ${dest.name}.`);
+  const atk = pick(Math.random, cand), mins = RAID_MIN + Math.random()*(RAID_MAX-RAID_MIN);
+  let total = g.hp * (0.6 + 0.8*Math.random());               // ~half of raids succeed on their own
+  if (g.owner==='you') total *= (1 - 0.15*g.fort);           // fortification weakens raids on yours
+  if (S.artifact && S.artifact.holder===atk) total *= 1 + ARTIFACT_RAID_BONUS*2;
+  S.raids[id] = { atk, start:Date.now(), end:Date.now()+mins*60000, rate: total/(mins*60000), last:Date.now(), acc:0 };
+  if (g.owner==='you'){ news(`🚨 ${T(atk).icon} ${atk} students are raiding YOUR ${gName(g.type)} at ${site.name}! Tend it to heal and fortify it.`); toast(`🚨 Your guardian at ${site.name} is under raid!`); }
+  else news(`⚔️ ${T(atk).icon} ${atk} students are raiding the ${g.type} ${gName(g.type)} at ${site.name}. Join them, or steal the final blow.`);
 }
 
 /* =====================================================================
@@ -498,8 +528,9 @@ function renderSites(){
   siteLayer.clearLayers();
   for (const s of SITES){
     const g = S.guardians[s.id], col = g ? TYPES[g.type].color : (s.aff ? TYPES[s.aff].color : '#777');
+    const raid = S.raids[s.id];
     const html = g
-      ? `<div class="site ${g.owner==='you'?'mine':''}" style="--tc:${col}">${gEmoji(g.type)}${g.owner==='you'?'<span class="crown">👑</span>':''}<span class="lv">${g.level}</span>${wellReady(s.id)?'<span class="drop">💧</span>':''}</div>`
+      ? `<div class="site ${g.owner==='you'?'mine':''} ${raid?'raid':''}" style="--tc:${col}">${raid?'<span class="swords">⚔️</span>':''}${gEmoji(g.type)}${g.owner==='you'?'<span class="crown">👑</span>':''}<span class="lv">${g.level}</span>${wellReady(s.id)?'<span class="drop">💧</span>':''}</div>`
       : `<div class="site empty" style="--tc:${col}">⛲${wellReady(s.id)?'<span class="drop">💧</span>':''}</div>`;
     const m = L.marker([s.lat,s.lng], { icon:L.divIcon({ className:'', iconSize:[44,44], html }), zIndexOffset:200 }).addTo(siteLayer);
     m.bindTooltip(esc(s.name), { permanent:true, direction:'bottom', offset:[0,22], className:'lmlabel' });
@@ -524,6 +555,8 @@ function updateBanner(){
   if (!inCampus(me.lat,me.lng)){ b.textContent = `You're ${fmtDist(distM(me.lat,me.lng,...CAMPUS.center))} from campus. Switch to 👆 test mode to explore.`; return; }
   const mine = guardianList().filter(x => x.g.owner==='you').length, packs = visiblePacks().length;
   if (currentWarden()){ b.textContent = '🔔 The Bell Warden is at Elliott Tower!'; return; }
+  const nr = Object.keys(S.raids).map(id => ({ s:siteById(id), d:0 })).filter(x => x.s).map(x => (x.d = distToMe(x.s.lat,x.s.lng), x)).filter(x => x.d <= RAID_SEEN_M).sort((a,b) => a.d-b.d)[0];
+  if (nr){ b.textContent = `⚔️ Raid at ${nr.s.name} (${fmtDist(nr.d)}). Tap it to join!`; return; }
   b.textContent = `${S.mode==='test' ? '👆 ' : ''}${packs} pack${packs===1?'':'s'} nearby · ${guardianList().length}/${MAX_GUARDIANS} guardians${mine ? ' · 👑 '+mine+' yours' : ''}`;
 }
 function hud(){ if (!S.mana) return; document.getElementById('manaStrip').innerHTML =
@@ -563,7 +596,7 @@ function tend(id){
   if (distToMe(s.lat,s.lng) > SITE_RANGE_M) return toast('Get closer to your guardian.');
   if (S.mana[g.type] + S.mana.Colorless < TEND_COST) return toast(`Tending costs ${TEND_COST} ${g.type} mana.`);
   if (g.fort>=3 && g.hp>=g.maxHp) return toast('Fully fortified and healed.');
-  pay(g.type, TEND_COST); g.fort = Math.min(3, g.fort+1); g.hp = g.maxHp; save(); renderSites();
+  pay(g.type, TEND_COST); if (S.raids[id]){ S.raids[id].rate *= 0.6; news(`🛡️ You tended your ${gName(g.type)} at ${siteById(id).name} mid-raid. The raid weakens.`); } g.fort = Math.min(3, g.fort+1); g.hp = g.maxHp; save(); renderSites();
   toast(`🛡️ Fortified (${g.fort}/3) and healed.`); openSite(id);
 }
 
@@ -603,8 +636,12 @@ function openSite(id){
   if (!g) seat = `<p>⛲ <b>Empty seat.</b> Topple a guardian anywhere on campus, and your final card can summon its faction's guardian here.</p>`;
   else if (g.owner==='you') seat = guardianPanel(s,g) + `<p class="dim">Rival students raid guardians. Tending heals your guardian and fortifies it against raids (−10% raid success per level).</p>
     <div class="row"><button class="mana" style="background:${T(g.type).color}" data-act="tend" data-arg="${id}" ${near?'':'disabled'}>🛡️ Tend (${T(g.type).icon}${TEND_COST})</button></div>`;
-  else seat = guardianPanel(s,g) + `<p class="dim">Its wounds stay between attempts. It heals ${GUARDIAN_REGEN} HP every ${GUARDIAN_REGEN_MIN} min.</p>
-    <div class="row"><button class="primary" data-act="challenge" data-arg="${id}" ${near?'':'disabled'}>${near ? '⚔️ Challenge' : 'You\'re '+fmtDist(d)+' away'}</button></div>`;
+  const raid = S.raids[id];
+  const raidBox = raid ? `<div class="box" style="border:2px solid #ff3b30">⚔️ <b>Raid in progress!</b> ${T(raid.atk).icon} ${raid.atk} students are attacking. It ends in ${fmtMin(raid.end-Date.now())}.
+    <div class="dim" style="font-size:12px">${g && g.owner==='you' ? 'Tend your guardian to heal it and weaken the raid.' : 'Join to fight alongside them. Land the final blow yourself and <b>your</b> faction rises instead.'}</div></div>` : '';
+  if (g && g.owner==='you') seat = raidBox + seat;
+  else if (g) seat = raidBox + guardianPanel(s,g) + `<p class="dim">Its wounds stay between attempts. It heals ${GUARDIAN_REGEN} HP every ${GUARDIAN_REGEN_MIN} min.</p>
+    <div class="row"><button class="primary" data-act="challenge" data-arg="${id}" ${near?'':'disabled'}>${near ? (raid ? '⚔️ Join the raid' : '⚔️ Challenge') : 'You\'re '+fmtDist(d)+' away'}</button></div>`;
   openSheet(`<h2>${esc(s.name)}</h2>
     ${plaqueHTML(id)}
     <p class="dim">${s.aff ? `Home turf of ${TYPES[s.aff].icon} <b>${s.aff}</b>: ${TYPES[s.aff].units}. ${s.aff} cards hit +1 here.` : 'Commons: no faction calls this home.'}</p>
@@ -643,7 +680,7 @@ const STRIKE_MS = 9000, STRIKE_MS_ENRAGED = 7000, DRAW_MS = 1800, WARD_PER_ALLY 
 const ROLES = {
   Tank:    { icon:'🛡️', types:['Might'],        every:6000, text:'Taunts the guardian to draw its strikes, and raises a shield' },
   Healer:  { icon:'💚', types:['Wild'],         every:4500, text:'Restores resolve to whoever is hurt worst' },
-  DPS:     { icon:'⚔️', types:['Gear'],         every:3500, text:'Deals steady damage' },
+  DPS:     { icon:'⚔️', types:['Gear'],         every:5000, text:'Deals steady damage' },
   Support: { icon:'📣', types:['Lore','Muse'],  every:5500, text:'Jams the next strike or boosts your next card' },
 };
 let B = null, siegeLoop = null;
@@ -664,19 +701,19 @@ function challenge(id){
   const s = siteById(id), g = id==='tower' ? currentWarden() : S.guardians[id];
   if (!g) return toast('Nothing to fight here right now.');
   // Computer-controlled students answer the call: 2–3 of them, each in a role
-  const n = 2 + (Math.random()<0.5 ? 1 : 0), now = Date.now();
+  const raid = S.raids[id], n = raid ? 4 : 2 + (Math.random()<0.5 ? 1 : 0), now = Date.now();
   const party = shuffle(Object.keys(ROLES)).slice(0,n).map((role,i) => {
-    const R = ROLES[role], type = pick(Math.random, R.types.filter(t => t!==g.type).length ? R.types.filter(t => t!==g.type) : R.types);
+    const R = ROLES[role], type = raid ? raid.atk : pick(Math.random, R.types.filter(t => t!==g.type).length ? R.types.filter(t => t!==g.type) : R.types);
     const c = makeCard(Math.random, type, 1);
     return { id:'a'+i, name:c.name, emoji:c.emoji, type, role, resolve:18, max:18, block:0, threat:role==='Tank' ? 20 : 0, next: now + 1500 + Math.random()*R.every };
   });
   B = { site:s, g, draw:shuffle(deck.map(c => Object.assign({},c))), hand:[], discard:[], party,
         me:{ id:'me', name:'You', emoji:'🧑‍🎓', role:'You', resolve:RESOLVE, max:RESOLVE, block:0, threat:5 },
-        ward: WARD_PER_ALLY*party.length, wardMax: WARD_PER_ALLY*party.length, rally:0, disrupt:0,
+        ward: raid ? 0 : WARD_PER_ALLY*party.length, wardMax: raid ? 0 : WARD_PER_ALLY*party.length, rally:0, disrupt:0, surge:2, nextSurge: now + SURGE_MS,
         intent: rollIntent(g), nextStrike: now + STRIKE_MS, nextDraw: now + DRAW_MS, phase: phaseOf(g),
         played:new Set(), spent:0, over:false, handDirty:true, logDirty:true,
         log:[`⚠️ If you lose, every card you played gets tired for ${TIRED_MIN} min, and each has a ${Math.round(BREAK_CHANCE*100)}% chance to break for good. Retreating only tires them.`,
-             `⚔️ The siege begins! ${party.length} students answered the call: ${party.map(p => ROLES[p.role].icon+' '+p.role).join(', ')}. The guardian raised a ward of ${WARD_PER_ALLY*party.length} against the crowd.`] };
+             raid ? `⚔️ You join the ${raid.atk} raid! Its ${party.length} raiders already broke the guardian's ward. Watch out: if one of them lands the final blow, ${raid.atk} rises.` : `⚔️ The siege begins! ${party.length} students answered the call: ${party.map(p => ROLES[p.role].icon+' '+p.role).join(', ')}. The guardian raised a ward of ${WARD_PER_ALLY*party.length} against the crowd.`] };
   for (let k=0;k<HAND_SIZE;k++) drawOne();
   renderBattle(true);
   clearInterval(siegeLoop); siegeLoop = setInterval(siegeTick, 200);
@@ -702,7 +739,7 @@ function siegeTick(){
     if (a.role==='Tank'){ const top = Math.max(...alive().map(p => p.threat)); a.threat = top + 10; a.block += 6; blog(`🛡️ ${a.emoji} ${a.name} taunts the guardian and raises a shield (+6 block).`); }
     else if (a.role==='Healer'){ const t = alive().sort((x,y) => x.resolve/x.max - y.resolve/y.max)[0];
       const h = Math.min(4, t.max - t.resolve); if (h>0){ t.resolve += h; a.threat += 2; blog(`💚 ${a.emoji} ${a.name} heals ${t===B.me ? 'you' : t.name} for ${h}.`); } }
-    else if (a.role==='DPS'){ let d = 5 + Math.floor(Math.random()*4) + boostFor(a.type, B.site);
+    else if (a.role==='DPS'){ let d = 4 + Math.floor(Math.random()*4) + boostFor(a.type, B.site);
       if (TYPES[a.type].beats===B.g.type) d += 2; a.threat += d;
       const soak = hitGuardian(d, a); blog(`⚔️ ${a.emoji} ${a.name} hits for ${d}${soak ? ` (${soak} into the ward)` : ''}.`);
       if (B.g.hp<=0){ allyWin(a); return; } }
@@ -724,6 +761,8 @@ function siegeTick(){
     B.intent = rollIntent(B.g); B.nextStrike = now + (B.phase>=2 ? STRIKE_MS_ENRAGED : STRIKE_MS);
     if (B.me.resolve<=0){ lose('Your resolve breaks.'); return; }
   }
+  // battle mana surge
+  if (now >= B.nextSurge){ B.nextSurge = now + SURGE_MS; if (B.surge < SURGE_MAX){ B.surge++; B.handDirty = true; changed = true; } }
   // draw
   if (now >= B.nextDraw){ B.nextDraw = now + DRAW_MS; if (B.hand.length < HAND_SIZE){ drawOne(); changed = true; } }
   updateBattle(changed);
@@ -759,8 +798,8 @@ function updateBattle(changed){
   if (!changed) return;
   $('bGuard').innerHTML = guardianPanel(B.site, g) + (B.wardMax ? `<div style="font-size:12px;margin-top:4px">🔰 Crowd ward ${B.ward}/${B.wardMax}<div class="bar" style="height:5px"><i style="width:${100*B.ward/B.wardMax}%;background:#9ecbff"></i></div></div>` : '');
   $('bParty').innerHTML = `<div class="dim" style="font-size:11px;margin-bottom:2px">SIEGE PARTY · 🎯 = the guardian's current target</div>` + [B.me, ...B.party].map(memberRow).join('');
-  $('bMana').innerHTML = document.getElementById('manaStrip').innerHTML;
-  $('bDeck').textContent = `Draw ${B.draw.length} · Discard ${B.discard.length} · You draw a card every ${DRAW_MS/1000}s`;
+  $('bMana').innerHTML = document.getElementById('manaStrip').innerHTML + `<span style="--tc:#ffd84d" title="Battle mana: pays for any card in this siege">⚡${B.surge}</span>`;
+  $('bDeck').textContent = `⚡ Battle mana +1 every ${SURGE_MS/1000}s (max ${SURGE_MAX}) · draw a card every ${DRAW_MS/1000}s · deck ${B.draw.length}`;
   if (B.handDirty){ B.handDirty = false;
     $('bHand').innerHTML = B.hand.map((c,k) => cardHTML(c,{ eff:effPow(c)+B.rally, cls: canPay(c) ? 'pickable' : 'cant', attr:`data-act="play" data-arg="${k}"` })).join('') || '<p class="dim">Drawing…</p>'; }
   if (B.logDirty){ B.logDirty = false; $('bLog').innerHTML = B.log.slice(0,10).map(l => `<div>${l.replace(/<(?!\/?b>)/g,'&lt;')}</div>`).join(''); }
@@ -783,7 +822,7 @@ function playCard(k){
   updateBattle(true);
 }
 function allyWin(a){
-  B.over = true; clearInterval(siegeLoop); const s = B.site, old = B.g;
+  B.over = true; clearInterval(siegeLoop); const s = B.site, old = B.g; delete S.raids[s.id];
   if (s.id==='tower'){ old.beaten = a.type; const lost = S.artifact && S.artifact.holder==='you'; S.artifact = { holder:a.type, since:Date.now() };
     news(`🔔 In your siege, ${a.name} (${a.type}) landed the final blow on the Bell Warden. ${a.type} students now hold the Carillon${lost ? ', taken from YOU' : ''}.`); }
   else { delete S.guardians[s.id];
@@ -816,7 +855,7 @@ function lose(why, retreat){
 }
 let pendingSummon = null;
 function win(final){
-  B.over = true; clearInterval(siegeLoop); const s = B.site, old = B.g;
+  B.over = true; clearInterval(siegeLoop); delete S.raids[B.site.id]; const s = B.site, old = B.g;
   if (s.id==='tower'){
     old.beaten = 'you'; const had = S.artifact && S.artifact.holder; S.artifact = { holder:'you', since:Date.now() };
     const grant = Math.min(ARTIFACT_GRANT, COLORLESS_MAX - S.mana.Colorless); S.mana.Colorless += grant;
@@ -922,6 +961,8 @@ function showHelp(){
     <p>🔔 <b>Elliott Tower</b> belongs to no faction. A colorless Bell Warden appears there at random times. Whoever topples it holds the <b>Carillon</b>, which gives ◇ colorless mana. Colorless mana pays for any card, and wells give the holder extra. You hold the Carillon until someone topples the next Warden.</p>
     <p>🎁 <b>Packs</b> pop up around campus for a few minutes and then vanish. Walk into a pack's square to open it. Packs near a guardian usually hold that guardian's faction.</p>
     <p>🃏 <b>Decks</b> hold ${DECK_MIN}–${DECK_MAX} cards. Every card costs mana to play, so a fight spends what you gathered.</p>
+    <p>🔋 <b>Mana regenerates.</b> Every ${MANA_REGEN_MIN} min, each color below ${MANA_REGEN_CAP} regains 1, so you're never fully broke. Wells are how you stock up past that. In a siege you also gain ⚡ battle mana every ${SURGE_MS/1000}s, which pays for any card.</p>
+    <p>🚨 <b>Raids.</b> Rival students raid guardians for several minutes at a time. A raided site pulses red with ⚔️. Tap it to join. Land the final blow yourself and your faction rises instead of theirs. If your own guardian is raided, tend it to heal it and weaken the raid.</p>
     <p>💔 <b>Losing hurts.</b> Every card you played in a lost fight is tired for ${TIRED_MIN} min, and each has a ${Math.round(BREAK_CHANCE*100)}% chance to <b>break</b> and be gone for good (rare cards are tougher). Retreating only tires them. Keep collecting packs, because a deep collection is your insurance.</p>
     <p>⚔️ <b>Sieges are live.</b> Other students join you in a fight, each in a role: 🛡️ tanks draw the guardian's strikes, 💚 healers keep everyone standing, ⚔️ damage dealers chip away, and 📣 support jams strikes or boosts your cards. The guardian strikes every few seconds at whoever has its attention (🎯). Your Guard cards taunt, Mend heals the most-hurt ally, and Rally boosts your next card. Bigger crowds face a tougher ward, and at half HP the guardian gets angry. <b>Whoever lands the final blow decides which faction rises.</b></p>
     <p>🛡️ <b>Guardians.</b> Only ${MAX_GUARDIANS} can stand at once. Defeat one and its seat goes empty. The faction of your <b>final card</b> summons a guardian at an empty seat you choose. Guardians make their faction's cards stronger everywhere and draw those cards to nearby packs.</p>
@@ -992,7 +1033,7 @@ document.getElementById('centerBtn').onclick = () => me ? map.setView([me.lat,me
 
 function heartbeat(){
   const before = JSON.stringify(S.guardians);
-  regenGuardians(); if (!(B && !B.over)) rivalCatchUp(); prunePacks();
+  regenGuardians(); manaRegen(); processRaids(); if (!(B && !B.over)) rivalCatchUp(); prunePacks();
   for (const u in S.tired) if (!tiredLeft(u)) delete S.tired[u];
   save(); renderSites();
   renderPacks(); updateBanner(); hud();
