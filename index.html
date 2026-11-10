@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Campus Critters — Oakland University</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root { --gold:#d4a017; --bg:#17171b; --panel:#222228; --text:#f2f2f2; --dim:#9a9aa5; --mana:#3fa9ff; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; -webkit-tap-highlight-color:transparent; }
+  body { display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:6px; padding:8px 10px; background:#000; border-bottom:2px solid var(--gold); }
+  header h1 { font-size:16px; margin:0; flex:1; color:var(--gold); white-space:nowrap; }
+  .chip { background:#0d2236; color:var(--mana); border:1px solid var(--mana); border-radius:14px; padding:4px 9px; font-weight:700; font-size:14px; white-space:nowrap; }
+  button { font:inherit; border:0; border-radius:10px; padding:8px 12px; background:#33333c; color:var(--text); cursor:pointer; }
+  button.primary { background:var(--gold); color:#000; font-weight:700; }
+  button.mana { background:var(--mana); color:#001; font-weight:700; }
+  button:disabled { opacity:.4; cursor:default; }
+  main { flex:1; position:relative; overflow:hidden; }
+  #map { position:absolute; inset:0; }
+  .page { position:absolute; inset:0; overflow:auto; padding:12px; background:var(--bg); z-index:900; }
+  #banner { position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:500; background:rgba(0,0,0,.82);
+    padding:6px 12px; border-radius:20px; font-size:13px; max-width:92%; text-align:center; pointer-events:none; }
+  nav.tabs { display:flex; background:#000; border-top:1px solid #333; padding-bottom:env(safe-area-inset-bottom); }
+  nav.tabs button { flex:1; background:none; border-radius:0; padding:11px 2px; color:var(--dim); font-size:14px; }
+  nav.tabs button.on { color:var(--gold); font-weight:700; }
+  h2 { margin:0 0 6px; font-size:19px; color:var(--gold); }
+  p { margin:6px 0; line-height:1.4; }
+  .dim { color:var(--dim); }
+
+  /* cards */
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(104px,1fr)); gap:9px; }
+  .card { position:relative; border:3px solid var(--tc); border-radius:12px; background:linear-gradient(160deg,#2b2b33,#1b1b20);
+    padding:6px; display:flex; flex-direction:column; gap:3px; min-height:160px; user-select:none; }
+  .card .ctop { display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--tc); font-weight:700; }
+  .card .cost { background:var(--mana); color:#001; border-radius:10px; padding:1px 6px; font-size:12px; }
+  .card .art { font-size:40px; text-align:center; line-height:1.25; background:color-mix(in srgb,var(--tc) 18%,transparent); border-radius:8px; }
+  .card .cname { font-size:12px; font-weight:700; line-height:1.15; min-height:28px; }
+  .card .stats { display:flex; justify-content:space-between; font-size:12px; }
+  .card .boost { color:#7dff9a; }
+  .card .ab { font-size:11px; color:var(--dim); }
+  .card.r2 { box-shadow:0 0 9px 1px var(--gold); }
+  .card.r3 { box-shadow:0 0 13px 3px #ff5fd2; }
+  .card.indeck { outline:3px solid #fff; }
+  .card.indeck::after { content:'IN DECK'; position:absolute; top:-9px; left:50%; transform:translateX(-50%); background:#fff; color:#000; font-size:9px; font-weight:800; padding:1px 5px; border-radius:6px; }
+  .card.tired { opacity:.5; }
+  .card .zz { position:absolute; inset:auto 4px 30px 4px; text-align:center; background:rgba(0,0,0,.8); border-radius:8px; font-size:11px; padding:2px; color:#fff; opacity:1; }
+  .card.pickable { cursor:pointer; }
+  .card.pickable:active { transform:scale(.97); }
+  .card.cant { opacity:.45; }
+  .hand { display:flex; gap:8px; overflow-x:auto; padding:10px 2px 6px; }
+  .hand .card { flex:0 0 112px; }
+  .bar { height:7px; background:#444; border-radius:4px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:#4cd964; }
+  .bar.hp i { background:#e0524c; }
+
+  /* map markers */
+  .site { width:44px; height:44px; border-radius:12px; background:#000; border:3px solid var(--tc);
+    display:flex; align-items:center; justify-content:center; font-size:23px; box-shadow:0 2px 8px rgba(0,0,0,.6); position:relative; }
+  .site.empty { border-style:dashed; background:#1c1c22; font-size:20px; }
+  .site.mine { box-shadow:0 0 0 3px #fff, 0 0 14px 4px var(--tc); }
+  .site .crown { position:absolute; top:-13px; left:50%; transform:translateX(-50%); font-size:15px; }
+  .site .lv { position:absolute; bottom:-7px; right:-7px; background:var(--tc); color:#000; font-size:10px; font-weight:800; border-radius:8px; padding:0 4px; }
+  .site .drop { position:absolute; top:-7px; left:-7px; font-size:13px; }
+  .pack { width:38px; height:38px; border-radius:50%; background:#fff; border:3px solid var(--tc); display:flex; align-items:center; justify-content:center;
+    font-size:21px; box-shadow:0 0 10px 2px var(--tc); animation:bob 1.6s ease-in-out infinite; }
+  @keyframes bob { 50% { transform:translateY(-4px); } }
+  .site.tower { border-radius:50%; border-color:#e8e8e8; font-size:22px; }
+  .site.tower.live { box-shadow:0 0 0 3px #fff, 0 0 22px 8px #ffe680; animation:ring 1.2s ease-in-out infinite; }
+  @keyframes ring { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }
+  .mstrip { display:flex; justify-content:space-around; gap:2px; padding:5px 6px; background:#0b0b0e; border-bottom:1px solid #2a2a30; font-size:14px; font-weight:700; }
+  .mstrip span { padding:1px 6px; border-radius:10px; background:color-mix(in srgb,var(--tc) 22%,transparent); color:var(--tc); }
+  .me { width:20px; height:20px; border-radius:50%; background:#2f8cff; border:3px solid #fff; box-shadow:0 0 0 6px rgba(47,140,255,.3); }
+  .lmlabel { background:rgba(0,0,0,.72); color:#fff; border:0; font-size:10px; padding:1px 5px; box-shadow:none; }
+  .lmlabel::before { display:none; }
+
+  /* sheets */
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1000; display:flex; align-items:flex-end; justify-content:center; }
+  .modal[hidden] { display:none; }
+  .sheet { background:var(--panel); width:100%; max-width:640px; max-height:94vh; overflow:auto; border-radius:16px 16px 0 0;
+    padding:16px 14px calc(16px + env(safe-area-inset-bottom)); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .row button { flex:1; }
+  .box { background:#18181d; border-radius:12px; padding:10px; margin:8px 0; }
+  .gpanel { display:flex; gap:12px; align-items:center; }
+  .gpanel .big { font-size:52px; width:72px; height:72px; border-radius:16px; border:3px solid var(--tc); display:flex; align-items:center; justify-content:center; background:#000; flex:0 0 72px; }
+  .gpanel .info { flex:1; }
+  .stat { display:inline-block; margin-right:10px; font-size:14px; }
+  .log { background:#111; border-radius:10px; padding:8px; font-size:13px; max-height:110px; overflow:auto; margin:8px 0; line-height:1.4; }
+  .log div { color:var(--dim); } .log div:first-child { color:#fff; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 12px; }
+  .chips button { padding:5px 10px; font-size:13px; border-radius:16px; }
+  .chips button.on { background:var(--gold); color:#000; }
+  .reveal { display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin:10px 0; }
+  .reveal .card { width:112px; animation:pop .5s ease-out both; }
+  .reveal .card:nth-child(2) { animation-delay:.15s } .reveal .card:nth-child(3) { animation-delay:.3s }
+  @keyframes pop { 0%{transform:scale(.2) rotate(-15deg);opacity:0} 100%{transform:none;opacity:1} }
+  .allegiance { display:grid; grid-template-columns:auto 1fr auto; gap:4px 8px; align-items:center; font-size:13px; }
+  .allegiance .bar i { background:var(--tc); }
+  .news div { padding:8px 0; border-bottom:1px solid #2c2c33; font-size:14px; line-height:1.35; }
+  .news .t { color:var(--dim); font-size:11px; }
+  .glist button { display:flex; width:100%; text-align:left; gap:10px; align-items:center; margin:6px 0; background:#1f1f25; border-left:5px solid var(--tc); }
+  .wheel { font-size:12px; color:var(--dim); text-align:center; margin:4px 0; }
+  textarea { width:100%; height:120px; background:#111; color:#ddd; border:1px solid #444; border-radius:8px; font-size:11px; }
+  .sheet h3 { color:#fff; font-size:16px; margin:16px 0 4px; }
+  .links { padding-left:18px; line-height:1.7; } .links a, .plaque a { color:#8cc8ff; }
+  .flavor { font-style:italic; color:#cfcfd8; font-size:13px; line-height:1.4; }
+  .plaque { background:#2a241a; border:1px solid #6b5a33; border-radius:10px; padding:10px; margin:8px 0; font-size:13px; line-height:1.45; }
+  #toast { position:fixed; left:50%; top:96px; transform:translateX(-50%); background:#000; border:1px solid var(--gold);
+    padding:10px 14px; border-radius:12px; z-index:2000; font-size:14px; max-width:90%; opacity:0; transition:opacity .25s; pointer-events:none; }
+  #toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🐾 Campus Critters</h1>
+  <button id="modeBtn" title="GPS or tap-to-move test mode">📡</button>
+  <button id="centerBtn" title="Center on me">🎯</button>
+</header>
+<div class="mstrip" id="manaStrip"></div>
+<main>
+  <div id="map"></div>
+  <div id="banner">Loading…</div>
+  <section id="cardsPage" class="page" hidden></section>
+  <section id="newsPage" class="page" hidden></section>
+</main>
+<nav class="tabs">
+  <button id="tabMap" class="on">🗺️ Map</button>
+  <button id="tabCards">🃏 Cards</button>
+  <button id="tabNews">📯 Campus</button>
+  <button id="tabHelp">❓ Help</button>
+</nav>
+<div id="modal" class="modal" hidden><div class="sheet" id="sheet"></div></div>
+<div id="toast"></div>
+
+<script>
+/* =====================================================================
+   LORE — flavor text, site plaques, and the history page.
+   Plaque facts are paraphrased from the linked sources; flavor lines are fiction
+   unless they cite a source.
+   ===================================================================== */
+const SRC = {
+  buildings: 'https://www.oakland.edu/about/buildings/',
+  symbols:   'https://www.michigan.gov/som/about-michigan/state-facts-and-symbols',
+  hannah:    'https://en.wikipedia.org/wiki/John_A._Hannah',
+};
+const LORE = {
+  creatures: {
+    'Owl':            'Keeps library hours. Mostly the ones after midnight.',
+    'Bookworm':       'Ate a footnote once. It has been citing it ever since.',
+    'Footnote Snail': 'Slow, thorough, and always at the bottom of the page.',
+    'Stacks Bat':     'Finds its way through the stacks by echolocating call numbers.',
+    'Archive Cat':    'Guards special collections. Will not be photographed.',
+    'Bot':            'A motor-city descendant. Its grandparents had tailfins.',
+    'Circuit Crab':   'Walks sideways through every merge conflict.',
+    'Drone Bee':      'Pollinates the quad with Wi-Fi.',
+    'Servo':          'One arm, full torque, zero patience.',
+    'Debug Beetle':   'It is not the bug. It finds the bug.',
+    'Deer':           ['Michigan has named the white-tailed deer its state game mammal since 1997. A class of Zeeland fourth graders lobbied for it. Civic action works.', SRC.symbols],
+    'Turkey':         'Owns the sidewalk. Has always owned the sidewalk.',
+    'Squirrel':       'Has buried an acorn under every bench on campus. Remembers about half.',
+    'Duck':           'A Bear Lake regular. Accepts tribute, but please, no bread.',
+    'Pond Turtle':    ['The painted turtle became Michigan\'s state reptile in 1995, after fifth graders in Niles noticed the state didn\'t have one.', SRC.symbols],
+    'Raccoon':        'Knows the dining hall\'s trash schedule better than its own syllabus.',
+    'Bear':           'Hibernates through every 8 a.m. class.',
+    'Bison':          'Trains on the Upper Fields. The fields have stopped complaining.',
+    'Wolf':           'Runs in packs. Lifts in sets.',
+    'Rhino':          'Charges through finals week horn first.',
+    'Boar':           'Never skips leg day. Never skips any day.',
+    'Peacock':        'Every feather is a curtain call.',
+    'Songbird':       'Rehearses in Varner\'s stairwells for the acoustics.',
+    'Butterfly':      'Changed majors three times. Got more beautiful every time.',
+    'Octo-Bard':      'Plays eight instruments at once, all slightly out of tune.',
+    'Parrot':         'Repeats everything said in lecture. Understands about half, like everyone.',
+  },
+  guardians: {
+    Lore:      'Older than the library, and still upset about late fees.',
+    Gear:      'Assembled from the leftover parts of a hundred senior design projects.',
+    Wild:      'Walked these woods long before anyone cut the trails.',
+    Might:     'Never loses. Sometimes takes a strategic nap.',
+    Muse:      'Demands an encore. Always.',
+    Colorless: 'Forty-nine bells, and one of them is always listening.',
+  },
+  sites: {
+    kresge:      ['Named for Sebastian S. Kresge, founder of the Kresge store chain and the Kresge Foundation. His $1.5 million gift built the original library. A dime-store fortune, turned into books.', SRC.buildings],
+    nfh:         ['Dedicated on Oct. 1, 1959, as the very first building of Michigan State University–Oakland. Its name honors the MSUO Foundation, a group of 50 community leaders who backed the new school.', SRC.buildings],
+    pawley:      ['Named for alumnus and trustee Dennis Pawley and his wife, Carlotta, who gave a $4 million leadership gift in 2004. The hall was dedicated on Founders\' Day that year.', SRC.buildings],
+    wilson:      ['Named for Matilda Dodge Wilson and her second husband, Alfred Wilson. In 1957 they founded MSU–Oakland with a $2 million gift and their 1,500-acre estate. The money behind this campus started with cars.', SRC.buildings],
+    varner:      ['Named for D.B. "Woody" Varner, OU\'s first chancellor, who led the school from 1958 to 1970.', SRC.buildings],
+    vandenberg:  ['Named for Arthur Vandenberg, a U.S. senator from Michigan who took an active part in founding the United Nations.', SRC.buildings],
+    ec:          ['Built in 2014 as the home of the School of Engineering and Computer Science: 127,000 square feet of labs and classrooms.', SRC.buildings],
+    dodge:       ['Named for John F. and Horace E. Dodge, who co-founded Dodge Brothers Motor Cars. John was Matilda Dodge Wilson\'s first husband. The Dodge fortune is part of how this campus came to exist.', SRC.buildings],
+    hannah:      ['Named for John A. Hannah, the Michigan State president who helped create MSU–Oakland. He also chaired the U.S. Commission on Civil Rights, created in 1957, until 1969.', SRC.hannah],
+    bearlake:    ['No plaque here, just water and whoever is sitting beside it. The Wild faction\'s oldest well, according to the Wild faction.', null],
+    odowd:       ['Named for Jan and Donald O\'Dowd. Donald taught psychology, became provost, and served as OU\'s president from 1970 to 1979.', SRC.buildings],
+    hhb:         ['Opened in 2012 for nursing and the health sciences, and heated and cooled by 256 geothermal wells. This campus had wells long before the game did.', SRC.buildings],
+    woods:       ['The Grizzly Oaks disc golf course winds through these trees. Mind the flying discs.', null],
+    elliotthall: ['Named for benefactors R. Hugh and Nancy Elliott, and dedicated on Sept. 22, 2000, as the home of the School of Business Administration.', SRC.buildings],
+    rec:         ['Part of the Recreation and Athletics Center, which includes the Lepley Sports Center. It\'s named for Hollie L. Lepley, who guided MSU–Oakland\'s first recreation program and served the university from 1959 to 1979.', SRC.buildings],
+    arena:       ['Home court. Bring noise.', null],
+    fields:      ['Open grass, long sightlines, and nowhere to hide from a Might guardian.', null],
+    oc:          ['Opened in 1959 as the main student center. A glass-fronted expansion followed in 2003. Every faction passes through here eventually.', SRC.buildings],
+    hamlin:      ['Named for Delos Hamlin, who chaired the Oakland County Board of Supervisors and served on the MSUO Foundation board.', SRC.buildings],
+    tower:       ['Completed in 2014 with a gift from Hugh and Nancy Elliott. It stands 151 feet tall with 49 bells, making it Michigan\'s 14th carillon tower and only the fourth on a university campus.', SRC.buildings],
+  },
+};
+
+/* The serious page. Kept out of the game's voice on purpose. */
+const HISTORY_HTML = `
+<h2>🪶 History beneath the game</h2>
+<p class="dim">This page isn't part of the game. Nothing here earns mana, cards or points. It's here because this game is played on real land with a real history, at a school.</p>
+
+<h3>Whose land is this?</h3>
+<p>Oakland University stands on the ancestral, traditional and present-day lands of the <b>Anishinaabe</b>: the Three Fires Confederacy of the <b>Ojibwe, Odawa and Potawatomi</b> peoples. OU affirms this in its Land Acknowledgement Statement, which also recognizes the sovereignty of Michigan's tribal nations. These are living nations. Southeast Michigan is home to one of the largest urban Native American populations in the country.</p>
+
+<h3>How the land changed hands</h3>
+<p>On Nov. 17, 1807, William Hull, governor of the Michigan Territory, signed the <b>Treaty of Detroit</b> with leaders of the Odawa, Ojibwe, Potawatomi and Wyandot nations. Under the treaty, the nations ceded roughly the southeast quarter of Michigan's Lower Peninsula, including the land under this campus, to the United States. OU's own leadership has named this treaty as the cession that covers the campus.</p>
+<p>Like many treaties of its era, it was signed under heavy pressure. Reporting on OU's heritage site describes the Anishinaabe as having been forced to sign, for about two cents an acre.</p>
+
+<h3>Names on the map</h3>
+<p>The city next door, <b>Pontiac</b>, is named for <b>Obwandiyag</b>, an Odawa leader who was likely born along the Detroit River. In 1763 he led a war against British occupation of the Great Lakes region that began with a siege of Fort Detroit. A car brand later took its name from the city.</p>
+
+<h3>What OU has done, and what people are still asking for</h3>
+<p>OU adopted its Land Acknowledgement in 2021 and marked it with a plaque in April 2022. That month it also dedicated a Native American heritage site on south campus named <b>Gidinawemaaganinaanig: Endazhigiyang</b>, which is Anishinaabemowin for "All Our Relations: The Place Where We All Grow." It's called Gitigan, "garden," for short. The site is stewarded by OU's Native American Advisory Committee, and news coverage reported it as the first U.S. campus to return land use to a Native community.</p>
+<p>The faculty who drove this work have said that a statement alone isn't enough. They've called for ongoing commitments, such as an endowment for the heritage site.</p>
+<p><b>The heritage site is deliberately not part of this game.</b> There are no wells, packs or guardians there. If you visit, go as a guest.</p>
+
+<h3>Close to campus: 1971</h3>
+<p>On Aug. 30, 1971, days before court-ordered busing was set to desegregate Pontiac's schools, Ku Klux Klan members dynamited 10 empty school buses in the Pontiac school district's depot. Six local Klansmen were arrested, and five were convicted, including the state Klan leader. The bombing made Pontiac a national flashpoint in the fight over school desegregation, It happened just a few miles from this campus.</p>
+
+<h3>Read more</h3>
+<ul class="links">
+  <li><a href="https://oakland.edu/community/land-acknowledgement-statement/" target="_blank" rel="noopener">OU Land Acknowledgement Statement</a></li>
+  <li><a href="https://sites.google.com/oakland.edu/plantsofgitigan/home" target="_blank" rel="noopener">Gitigan: OU's Native American Heritage Site and its plant relatives</a></li>
+  <li><a href="https://www.cbsnews.com/detroit/news/honoring-native-american-heritage-at-oakland-university" target="_blank" rel="noopener">CBS Detroit: Honoring Native American heritage at OU</a></li>
+  <li><a href="https://www.clickondetroit.com/news/local/2023/05/25/oakland-university-becomes-first-us-campus-to-return-land-to-native-american-community" target="_blank" rel="noopener">WDIV: OU returns land use to the Native community</a></li>
+  <li><a href="https://michiganology.org/stories/a-short-history-of-treaties" target="_blank" rel="noopener">Michiganology: A short history of treaties with Michigan's tribal nations</a></li>
+  <li><a href="https://www.loc.gov/item/2021667584/" target="_blank" rel="noopener">Library of Congress: The 1807 Treaty of Detroit</a></li>
+  <li><a href="https://home.nps.gov/articles/000/native-american-history-in-detroit.htm" target="_blank" rel="noopener">National Park Service: Native American history in Detroit</a></li>
+  <li><a href="https://detroithistorical.org/learn/encyclopedia-of-detroit/chief-pontiac" target="_blank" rel="noopener">Detroit Historical Society: Chief Pontiac (Obwandiyag)</a></li>
+  <li><a href="https://bentley.umich.edu/news-events/news/ten-burning-buses/" target="_blank" rel="noopener">Bentley Historical Library: Ten burning buses</a></li>
+  <li><a href="https://michiganadvance.com/2021/08/30/on-this-day-in-1971-kkk-bombs-empty-pontiac-buses-set-to-racially-integrate-schools/" target="_blank" rel="noopener">Michigan Advance: The 1971 Pontiac bus bombing</a></li>
+  <li><a href="https://oakland.libguides.com/c.php?g=1235662" target="_blank" rel="noopener">OU Libraries: Researching Michigan history</a></li>
+</ul>`;
+
+/* =====================================================================
+   CONFIG — tune pacing here
+   ===================================================================== */
+const PREVIEW = false;          // true = self-contained practice board (no tiles, no GPS)
+const CAMPUS = { S:42.660, W:-83.232, N:42.685, E:-83.195, center:[42.6720,-83.2155] };
+const CELL_LAT = 0.0007, CELL_LNG = 0.00095;   // ≈ 78 m squares
+const VIEW_RADIUS = 3;                          // squares shown around you (7×7)
+const MANA_MAX = 10, WELL_GIVE = 6, WELL_BLESS = 2, WELL_COOLDOWN_MIN = 10, TEND_COST = 3, COMMONS_GIVE = 4; // MANA_MAX is per color
+const COLORLESS_MAX = 12, ARTIFACT_GRANT = 8, ARTIFACT_WELL_BONUS = 2, ARTIFACT_RAID_BONUS = 0.1;
+const WARDEN_SLOT_MIN = 20, WARDEN_CHANCE = 0.65, WARDEN_RIVAL_CHANCE = 0.3;   // Elliott Tower's Bell Warden
+const PACK_SLOT_MIN = 15, PACK_CHANCE = 0.16, PACK_CHANCE_NEAR_GUARDIAN = 0.32, PACK_SIZE = 3, GUARDIAN_PULL_M = 220;
+const RIVAL_TICK_MIN = 5;                       // prototype pace: rival factions act every 5 min
+const GUARDIAN_REGEN = 3, GUARDIAN_REGEN_MIN = 10;
+const SITE_RANGE_M = 80, PACK_RANGE_M = 40;
+const DECK_MIN = 6, DECK_MAX = 12, HAND_SIZE = 4, RESOLVE = 20;
+const TIRED_MIN = 60, BREAK_CHANCE = 0.15, BREAK_CHANCE_RARE = 0.07;   // after a loss: played cards tire; some break
+const STORE_KEY = 'oucc3';
+
+/* =====================================================================
+   FACTIONS (types) — each maps onto academic units / buildings
+   ===================================================================== */
+const TYPES = {
+  Lore:  { color:'#6b7cff', icon:'📜', beats:'Gear',  units:'Humanities, education & the library',      guard:['🦉','Great Owl'] },
+  Gear:  { color:'#9aa0aa', icon:'⚙️', beats:'Wild',  units:'Engineering, computing & physical sciences', guard:['🤖','Colossus'] },
+  Wild:  { color:'#36b26a', icon:'🌿', beats:'Might', units:'Life sciences, health & the outdoors',       guard:['🦌','Elder Stag'] },
+  Might: { color:'#e0524c', icon:'💪', beats:'Muse',  units:'Athletics, business & recreation',          guard:['🐻','Great Bear'] },
+  Muse:  { color:'#c873e0', icon:'🎭', beats:'Lore',  units:'Arts, music, theatre & communication',      guard:['🦚','Peacock Sovereign'] },
+};
+const TYPE_KEYS = Object.keys(TYPES);
+const NEUTRAL = { color:'#e8e8e8', icon:'◇', beats:null, units:'No faction', guard:['🔔','Bell Warden'] };
+const T = t => TYPES[t] || NEUTRAL;
+const MAX_GUARDIANS = TYPE_KEYS.length - 2;     // n − 2: always two factions without a guardian
+const WHEEL = '📜 Lore › ⚙️ Gear › 🌿 Wild › 💪 Might › 🎭 Muse › 📜 Lore';
+const CREATURES = {
+  Lore:  [['🦉','Owl'],['🐛','Bookworm'],['🐌','Footnote Snail'],['🦇','Stacks Bat'],['🐈‍⬛','Archive Cat']],
+  Gear:  [['🤖','Bot'],['🦀','Circuit Crab'],['🐝','Drone Bee'],['🦾','Servo'],['🐞','Debug Beetle']],
+  Wild:  [['🦌','Deer'],['🦃','Turkey'],['🐿️','Squirrel'],['🦆','Duck'],['🐢','Pond Turtle'],['🦝','Raccoon']],
+  Might: [['🐻','Bear'],['🦬','Bison'],['🐺','Wolf'],['🦏','Rhino'],['🐗','Boar']],
+  Muse:  [['🦚','Peacock'],['🐦','Songbird'],['🦋','Butterfly'],['🐙','Octo-Bard'],['🦜','Parrot']],
+};
+const ADJ = {
+  Lore:  ['Overdue','Annotated','Peer-Reviewed','Citational','Hushed','Marginal'],
+  Gear:  ['Overclocked','Soldered','Recursive','Compiled','Rusty','Torqued'],
+  Wild:  ['Mossy','Feral','Dewy','Thorned','Wandering','Muddy'],
+  Might: ['Buff','Varsity','Iron','Sprinting','Stalwart','Hulking'],
+  Muse:  ['Encore','Dramatic','Lyric','Improv','Gilded','Offbeat'],
+};
+const ABIL = {
+  Guard: { icon:'🛡️', text:'Also gain block equal to half its power.' },
+  Mend:  { icon:'💚', text:'Also restore 3 resolve.' },
+  Swift: { icon:'⚡', text:'Also draw a card.' },
+  Rally: { icon:'📣', text:'Your next card this battle hits +3 harder.' },
+};
+const ABIL_KEYS = Object.keys(ABIL);
+const RARITY = ['Common','Uncommon','Rare','Legendary'];
+
+/* Sites = wells + guardian seats. Affinity = the faction whose academic home this is (null = commons).
+   Positions are approximate — use the Site Editor (Help tab) to move them to the right spots. */
+const BASE_SITES = [
+  ['kresge','Kresge Library',42.6717,-83.2155,'Lore'],      ['nfh','North Foundation Hall',42.6709,-83.2163,'Lore'],
+  ['pawley','Pawley Hall',42.6693,-83.2160,'Lore'],          ['wilson','Wilson Hall',42.6743,-83.2160,'Muse'],
+  ['varner','Varner Hall',42.6698,-83.2176,'Muse'],          ['vandenberg','Vandenberg Hall',42.6752,-83.2172,'Muse'],
+  ['ec','Engineering Center',42.6711,-83.2181,'Gear'],      ['dodge','Dodge Hall',42.6723,-83.2187,'Gear'],
+  ['hannah','Hannah Hall of Science',42.6702,-83.2147,'Gear'],['bearlake','Bear Lake',42.6731,-83.2168,'Wild'],
+  ['odowd',"O'Dowd Hall",42.6705,-83.2128,'Wild'],           ['hhb','Human Health Building',42.6734,-83.2102,'Wild'],
+  ['woods','Grizzly Oaks Woods',42.6680,-83.2122,'Wild'],    ['elliotthall','Elliott Hall',42.6708,-83.2200,'Might'],
+  ['rec','Recreation Center',42.6746,-83.2118,'Might'],     ['arena','Athletics Arena',42.6754,-83.2100,'Might'],
+  ['fields','Upper Fields',42.6777,-83.2128,'Might'],        ['oc','Oakland Center',42.6735,-83.2138,null],
+  ['hamlin','Hamlin Hall',42.6762,-83.2154,null],
+];
+let SITES = [];
+const TOWER_BASE = [42.6727,-83.2152];   // Elliott Tower: neutral ground, home of the Carillon artifact
+let TOWER = null;
+function buildSites(){ const o = S.siteOverrides.tower;
+  TOWER = { id:'tower', name:'Elliott Tower', lat:o?o[0]:TOWER_BASE[0], lng:o?o[1]:TOWER_BASE[1], aff:null };
+  SITES = BASE_SITES.map(([id,name,lat,lng,aff]) => { const o = S.siteOverrides[id]; return { id, name, lat:o?o[0]:lat, lng:o?o[1]:lng, aff }; }); }
+const siteById = id => id==='tower' ? TOWER : SITES.find(s => s.id===id);
+
+/* =====================================================================
+   SEEDED RANDOMNESS — same square + same time window = same pack for everyone
+   ===================================================================== */
+function hashStr(str){ let h = 1779033703 ^ str.length;
+  for (let i=0;i<str.length;i++){ h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = h<<13 | h>>>19; }
+  h = Math.imul(h ^ h>>>16, 2246822507); h = Math.imul(h ^ h>>>13, 3266489909); return (h ^= h>>>16) >>> 0; }
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+const rngFrom = s => mulberry32(hashStr(s));
+const pick = (r,arr) => arr[Math.floor(r()*arr.length)];
+function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function rollRarity(r){ const x=r(); return x<0.01?3 : x<0.08?2 : x<0.30?1 : 0; }
+function makeCard(r, type, rar){
+  const [emoji,noun] = pick(r, CREATURES[type]), adj = pick(r, ADJ[type]);
+  const cost = 1 + Math.floor(r()*3);
+  const ab = r() < 0.25 + 0.2*rar ? pick(r, ABIL_KEYS) : null;
+  const pow = 1 + cost*2 + rar + Math.floor(r()*2) - (ab?1:0);
+  return { type, rar, emoji, name:adj+' '+noun, cost, pow, ab };
+}
+
+/* =====================================================================
+   STATE — single-player prototype keeps everything in this browser.
+   Multiplayer: S.guardians + S.news move to the server (SQLite); the rest stays per-player.
+   ===================================================================== */
+let S = { cards:[], deck:[], tired:{}, mana:null, artifact:null, warden:null, wells:{}, opened:{}, guardians:{}, lastTick:0, news:[], mode:'gps', nextId:1,
+          seenHelp:false, siteOverrides:{}, editor:false, summoned:0, toppled:0, started:false };
+function load(){ try { const s = JSON.parse(localStorage.getItem(STORE_KEY)); if (s) S = Object.assign(S, s); } catch(e){}
+  if (!S.mana || typeof S.mana!=='object'){ S.mana = { Colorless:0 }; TYPE_KEYS.forEach(t => S.mana[t] = 2); } }
+const tiredLeft = uid => Math.max(0, (S.tired[uid]||0) - Date.now());
+const canPay = c => S.mana[c.type] + S.mana.Colorless >= c.cost;
+function pay(type, cost){ const a = Math.min(S.mana[type], cost); S.mana[type] -= a; S.mana.Colorless -= cost - a; return cost - a; }
+function save(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch(e){} hud(); }
+function addCard(c, origin){ const card = Object.assign({}, c, { uid:S.nextId++, origin, got:new Date().toLocaleDateString('en-CA') });
+  S.cards.push(card); if (S.deck.length < DECK_MAX) S.deck.push(card.uid); return card; }
+function news(text){ S.news.unshift({ t:Date.now(), text }); S.news = S.news.slice(0,50); }
+
+/* =====================================================================
+   GEOMETRY
+   ===================================================================== */
+const cellOf = (lat,lng) => [Math.floor(lat/CELL_LAT), Math.floor(lng/CELL_LNG)];
+const cellId = (i,j) => i+':'+j;
+const cellBounds = (i,j) => [[i*CELL_LAT, j*CELL_LNG], [(i+1)*CELL_LAT, (j+1)*CELL_LNG]];
+const inCampus = (lat,lng) => lat>=CAMPUS.S && lat<=CAMPUS.N && lng>=CAMPUS.W && lng<=CAMPUS.E;
+function distM(a,b,c,d){ const R=6371000, toR=Math.PI/180, dLat=(c-a)*toR, dLng=(d-b)*toR;
+  const x=Math.sin(dLat/2)**2+Math.cos(a*toR)*Math.cos(c*toR)*Math.sin(dLng/2)**2; return 2*R*Math.asin(Math.sqrt(x)); }
+const fmtDist = m => m<1000 ? Math.round(m)+' m' : (m/1000).toFixed(1)+' km';
+const fmtMin = ms => { const m = Math.ceil(ms/60000); return m<=1 ? 'under a minute' : m+' min'; };
+const distToMe = (lat,lng) => me ? distM(me.lat,me.lng,lat,lng) : Infinity;
+function esc(s){ return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+
+/* =====================================================================
+   GUARDIANS — at most MAX_GUARDIANS on campus at once
+   ===================================================================== */
+function makeGuardian(type, owner, level){ const maxHp = 34 + 12*level;
+  return { type, owner, level, maxHp, hp:maxHp, fort:0, since:Date.now(), upd:Date.now() }; }
+const gName = t => T(t).guard[1];
+const gEmoji = t => T(t).guard[0];
+const guardianList = () => Object.entries(S.guardians).map(([id,g]) => ({ site:siteById(id), g })).filter(x => x.site);
+function boostFor(type, site){ // potency: +1 per guardian of this faction on campus, +1 on its home turf
+  return guardianList().filter(x => x.g.type===type).length + (site && site.aff===type ? 1 : 0); }
+function nearestGuardian(lat,lng,maxM){ let best=null, bd=maxM;
+  for (const {site,g} of guardianList()){ const d = distM(lat,lng,site.lat,site.lng); if (d<bd){ bd=d; best=g; } } return best; }
+/* Elliott Tower: a colorless Bell Warden appears in random windows. Whoever topples it holds the Carillon. */
+function wardenWindow(){ const ms = WARDEN_SLOT_MIN*60000, slot = Math.floor(Date.now()/ms), r = rngFrom('warden|'+slot), now = Date.now();
+  const next = (slot+1)*ms;
+  if (r() > WARDEN_CHANCE) return { slot, active:false, next };
+  const start = slot*ms + r()*0.35*ms, end = start + (0.45+0.2*r())*ms;
+  return { slot, start, end, next, active: now>=start && now<end, upcoming: now<start };
+}
+function currentWarden(){ const w = wardenWindow(); if (!w.active) return null;
+  if (!S.warden || S.warden.slot!==w.slot) S.warden = { slot:w.slot, type:'Colorless', level:2, maxHp:56, hp:56, beaten:null, upd:Date.now(), end:w.end };
+  return S.warden.beaten ? null : S.warden; }
+const holderLabel = h => h==='you' ? 'You' : h ? T(h).icon+' '+h+' students' : 'Nobody';
+function seedGuardians(){
+  shuffle([...TYPE_KEYS]).slice(0, MAX_GUARDIANS).forEach(t => {
+    const empty = SITES.filter(s => !S.guardians[s.id]), home = empty.filter(s => s.aff===t);
+    const site = pick(Math.random, home.length ? home : empty);
+    S.guardians[site.id] = makeGuardian(t, 'rival', 1 + (Math.random()<0.4 ? 1 : 0));
+  });
+}
+function regenGuardians(){
+  const step = GUARDIAN_REGEN_MIN*60000;
+  for (const g of Object.values(S.guardians)){ const n = Math.floor((Date.now()-g.upd)/step);
+    if (n>0){ g.hp = Math.min(g.maxHp, g.hp + n*GUARDIAN_REGEN); g.upd += n*step; } }
+}
+/* Rival factions (AI stand-ins for other students) raid guardians on a timer */
+function rivalCatchUp(){
+  const T = RIVAL_TICK_MIN*60000; let n = 0;
+  while (Date.now()-S.lastTick >= T && n < 6){ S.lastTick += T; n++; rivalEvent(); }
+  if (Date.now()-S.lastTick >= T) S.lastTick = Date.now();
+  // An open slot with no summon pending (e.g. the page closed mid-summon) gets filled by a rival faction
+  while (!pendingSummon && Object.keys(S.guardians).length < MAX_GUARDIANS){
+    const held = new Set(Object.values(S.guardians).map(x => x.type)), t = pick(Math.random, TYPE_KEYS.filter(x => !held.has(x)));
+    const empty = SITES.filter(s => !S.guardians[s.id]), home = empty.filter(s => s.aff===t), dest = pick(Math.random, home.length ? home : empty);
+    S.guardians[dest.id] = makeGuardian(t, 'rival', 1); news(`📯 A ${t} ${gName(t)} rose at ${dest.name}.`);
+  }
+}
+function rivalEvent(){
+  const w = currentWarden();
+  if (w && Math.random() < WARDEN_RIVAL_CHANCE){ const t = pick(Math.random, TYPE_KEYS); w.beaten = t;
+    const lost = S.artifact && S.artifact.holder==='you'; S.artifact = { holder:t, since:Date.now() };
+    news(`🔔 ${T(t).icon} ${t} students toppled the Bell Warden at Elliott Tower and seized the Carillon${lost ? ' from YOU' : ''}!`);
+    if (lost) toast('🔔 You lost the Carillon!'); return; }
+  const ids = Object.keys(S.guardians); if (!ids.length) return;
+  const id = pick(Math.random, ids), g = S.guardians[id], site = siteById(id); if (!site) return;
+  const chance = (g.owner==='you' ? Math.max(0.1, 0.4 - 0.1*g.fort) : 0.35) + (S.artifact && S.artifact.holder!=='you' && S.artifact.holder ? ARTIFACT_RAID_BONUS : 0);
+  if (Math.random() > chance){
+    if (g.owner==='you' && g.fort>0){ g.fort--; news(`🛡️ Your ${gName(g.type)} at ${site.name} repelled a raid. Fortification −1.`); }
+    return; }
+  delete S.guardians[id];
+  const held = new Set(Object.values(S.guardians).map(x => x.type));
+  let cand = TYPE_KEYS.filter(t => t!==g.type && !held.has(t)); if (!cand.length) cand = TYPE_KEYS.filter(t => t!==g.type);
+  const t = pick(Math.random, cand);
+  const empties = SITES.filter(s => !S.guardians[s.id] && s.id!==id), home = empties.filter(s => s.aff===t);
+  const dest = pick(Math.random, home.length ? home : empties);
+  S.guardians[dest.id] = makeGuardian(t, 'rival', 1 + (Math.random()<0.4 ? 1 : 0));
+  if (g.owner==='you'){ news(`💔 ${TYPES[t].icon} ${t} students toppled YOUR ${gName(g.type)} at ${site.name}! Their ${gName(t)} rose at ${dest.name}.`);
+    toast(`💔 Your guardian at ${site.name} fell!`); }
+  else news(`📯 ${TYPES[t].icon} ${t} students toppled the ${g.type} ${gName(g.type)} at ${site.name}. A ${gName(t)} rose at ${dest.name}.`);
+}
+
+/* =====================================================================
+   PACKS — appear for a few minutes, then vanish. Guardians pull their faction's cards.
+   ===================================================================== */
+const packSlot = () => Math.floor(Date.now()/(PACK_SLOT_MIN*60000));
+function packFor(i,j,slot){
+  const id = cellId(i,j), r = rngFrom('pack|'+slot+'|'+id);
+  const lat = (i+0.15+0.7*r())*CELL_LAT, lng = (j+0.15+0.7*r())*CELL_LNG;
+  if (!inCampus(lat,lng)) return null;
+  const g = nearestGuardian(lat,lng,GUARDIAN_PULL_M);
+  if (r() > (g ? PACK_CHANCE_NEAR_GUARDIAN : PACK_CHANCE)) return null;
+  const slotMs = PACK_SLOT_MIN*60000, start = slot*slotMs + r()*0.5*slotMs, end = start + (0.4+0.4*r())*slotMs;
+  const cards = []; for (let k=0;k<PACK_SIZE;k++){ const type = g && r()<0.6 ? g.type : pick(r,TYPE_KEYS); cards.push(makeCard(r,type,rollRarity(r))); }
+  return { id:slot+'|'+id, cell:id, lat, lng, start, end, cards, pull:g ? g.type : null };
+}
+function visiblePacks(){
+  if (!me) return []; const [ci,cj] = cellOf(me.lat,me.lng), s = packSlot(), now = Date.now(), out = [];
+  for (let di=-VIEW_RADIUS; di<=VIEW_RADIUS; di++) for (let dj=-VIEW_RADIUS; dj<=VIEW_RADIUS; dj++)
+    for (const slot of [s-1,s]){ const p = packFor(ci+di,cj+dj,slot);
+      if (p && now>=p.start && now<p.end && !S.opened[p.id]) out.push(p); }
+  return out;
+}
+function prunePacks(){ const s = packSlot(); for (const k in S.opened) if (+k.split('|')[0] < s-1) delete S.opened[k]; }
+
+/* =====================================================================
+   MAP
+   ===================================================================== */
+const map = L.map('map', { zoomControl:false }).setView(CAMPUS.center, 17);
+if (!PREVIEW) L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap contributors' }).addTo(map);
+else {
+  document.getElementById('map').style.background = '#1f2b22';
+  const [i0,j0] = cellOf(CAMPUS.S,CAMPUS.W), [i1,j1] = cellOf(CAMPUS.N,CAMPUS.E), st = { color:'#3c5243', weight:1, interactive:false };
+  for (let i=i0;i<=i1+1;i++) L.polyline([[i*CELL_LAT,CAMPUS.W],[i*CELL_LAT,CAMPUS.E]], st).addTo(map);
+  for (let j=j0;j<=j1+1;j++) L.polyline([[CAMPUS.S,j*CELL_LNG],[CAMPUS.N,j*CELL_LNG]], st).addTo(map);
+  map.setMaxBounds([[CAMPUS.S-.003,CAMPUS.W-.004],[CAMPUS.N+.003,CAMPUS.E+.004]]); map.setMinZoom(15);
+}
+L.rectangle([[CAMPUS.S,CAMPUS.W],[CAMPUS.N,CAMPUS.E]], { color:'#d4a017', weight:2, fill:false, dashArray:'6 6', interactive:false }).addTo(map);
+const siteLayer = L.layerGroup().addTo(map), packLayer = L.layerGroup().addTo(map);
+let me = null, meMarker = null, cellRect = null;
+map.on('click', e => { if (S.mode==='test') setPos(e.latlng.lat, e.latlng.lng); });
+
+function setPos(lat,lng){
+  me = { lat, lng };
+  if (!meMarker) meMarker = L.marker([lat,lng], { icon:L.divIcon({ className:'', html:'<div class="me"></div>', iconSize:[20,20] }), interactive:false, zIndexOffset:-500 }).addTo(map);
+  else meMarker.setLatLng([lat,lng]);
+  const [i,j] = cellOf(lat,lng);
+  if (cellRect) cellRect.setBounds(cellBounds(i,j)); else cellRect = L.rectangle(cellBounds(i,j), { color:'#2f8cff', weight:1, fillOpacity:.08, interactive:false }).addTo(map);
+  renderPacks(); updateBanner();
+}
+function wellReady(id){ return Date.now() - (S.wells[id]||0) >= WELL_COOLDOWN_MIN*60000; }
+function renderSites(){
+  siteLayer.clearLayers();
+  for (const s of SITES){
+    const g = S.guardians[s.id], col = g ? TYPES[g.type].color : (s.aff ? TYPES[s.aff].color : '#777');
+    const html = g
+      ? `<div class="site ${g.owner==='you'?'mine':''}" style="--tc:${col}">${gEmoji(g.type)}${g.owner==='you'?'<span class="crown">👑</span>':''}<span class="lv">${g.level}</span>${wellReady(s.id)?'<span class="drop">💧</span>':''}</div>`
+      : `<div class="site empty" style="--tc:${col}">⛲${wellReady(s.id)?'<span class="drop">💧</span>':''}</div>`;
+    const m = L.marker([s.lat,s.lng], { icon:L.divIcon({ className:'', iconSize:[44,44], html }), zIndexOffset:200 }).addTo(siteLayer);
+    m.bindTooltip(esc(s.name), { permanent:true, direction:'bottom', offset:[0,22], className:'lmlabel' });
+    m.on('click', () => openSite(s.id));
+  }
+  const live = currentWarden();
+  L.marker([TOWER.lat,TOWER.lng], { icon:L.divIcon({ className:'', iconSize:[44,44],
+    html:`<div class="site tower ${live?'live':''}" style="--tc:#e8e8e8">${live ? '🔔' : '🗼'}${S.artifact && S.artifact.holder==='you' ? '<span class="crown">✨</span>' : ''}</div>` }), zIndexOffset:300 })
+    .addTo(siteLayer).bindTooltip('Elliott Tower', { permanent:true, direction:'bottom', offset:[0,22], className:'lmlabel' }).on('click', openTower);
+}
+function renderPacks(){
+  packLayer.clearLayers();
+  for (const p of visiblePacks()){
+    const col = p.pull ? TYPES[p.pull].color : '#d4a017';
+    L.marker([p.lat,p.lng], { icon:L.divIcon({ className:'', iconSize:[38,38], html:`<div class="pack" style="--tc:${col}">🎁</div>` }), zIndexOffset:400 })
+      .addTo(packLayer).on('click', () => tryPack(p));
+  }
+}
+function updateBanner(){
+  const b = document.getElementById('banner');
+  if (!me){ b.textContent = S.mode==='gps' ? 'Finding you…' : 'Tap the map to place yourself'; return; }
+  if (!inCampus(me.lat,me.lng)){ b.textContent = `You're ${fmtDist(distM(me.lat,me.lng,...CAMPUS.center))} from campus. Switch to 👆 test mode to explore.`; return; }
+  const mine = guardianList().filter(x => x.g.owner==='you').length, packs = visiblePacks().length;
+  if (currentWarden()){ b.textContent = '🔔 The Bell Warden is at Elliott Tower!'; return; }
+  b.textContent = `${S.mode==='test' ? '👆 ' : ''}${packs} pack${packs===1?'':'s'} nearby · ${guardianList().length}/${MAX_GUARDIANS} guardians${mine ? ' · 👑 '+mine+' yours' : ''}`;
+}
+function hud(){ if (!S.mana) return; document.getElementById('manaStrip').innerHTML =
+  TYPE_KEYS.map(t => `<span style="--tc:${T(t).color}" title="${t} mana">${T(t).icon}${S.mana[t]}</span>`).join('') +
+  `<span style="--tc:#fff" title="Colorless mana: pays for any card">◇${S.mana.Colorless}</span>`; }
+
+/* =====================================================================
+   PACKS & WELLS
+   ===================================================================== */
+function tryPack(p){
+  if (!me) return toast('Place yourself first.');
+  const [ci,cj] = cellOf(me.lat,me.lng), d = distM(me.lat,me.lng,p.lat,p.lng);
+  if (cellId(ci,cj)!==p.cell && d>PACK_RANGE_M) return toast(`🎁 is ${fmtDist(d)} away and vanishes in ${fmtMin(p.end-Date.now())}. Hurry!`);
+  S.opened[p.id] = 1;
+  const got = p.cards.map(c => addCard(c, 'a pack'+(p.pull ? ' near a '+p.pull+' guardian' : '')));
+  save(); renderPacks(); updateBanner();
+  openSheet(`<h2>🎁 Pack opened!</h2>${p.pull ? `<p class="dim">A nearby ${TYPES[p.pull].icon} ${p.pull} guardian drew its faction's critters here.</p>` : ''}
+    <div class="reveal">${got.map(c => cardHTML(c)).join('')}</div>
+    ${got.map(c => { const l = cardLore(c); return l ? `<p class="flavor">${c.emoji} ${esc(l.text)}</p>` : ''; }).join('')}
+    <p class="dim" style="text-align:center">${S.deck.length<DECK_MAX ? 'New cards go into your deck while it has room.' : 'Your deck is full. Swap cards in the 🃏 Cards tab.'}</p>
+    <div class="row"><button class="primary" data-act="close">Nice</button></div>`);
+}
+function drawMana(arg){
+  const [id, chosen] = String(arg).split('|'), s = siteById(id);
+  if (distToMe(s.lat,s.lng) > SITE_RANGE_M) return toast('Get closer to the well.');
+  if (!wellReady(id)) return toast(`This well refills in ${fmtMin(WELL_COOLDOWN_MIN*60000-(Date.now()-S.wells[id]))}.`);
+  const color = s.aff || chosen; if (!color) return;
+  const g = S.guardians[id], bless = g && g.owner==='you' ? WELL_BLESS : 0;
+  const give = Math.min((s.aff ? WELL_GIVE : COMMONS_GIVE) + bless, MANA_MAX - S.mana[color]);
+  const art = S.artifact && S.artifact.holder==='you' ? Math.min(ARTIFACT_WELL_BONUS, COLORLESS_MAX - S.mana.Colorless) : 0;
+  if (give<=0 && art<=0) return toast(`Your ${color} mana is already full (${MANA_MAX}).`);
+  S.mana[color] += give; S.mana.Colorless += art; S.wells[id] = Date.now(); save(); renderSites();
+  toast(`${T(color).icon} +${give} ${color} mana${bless ? ' (blessed)' : ''}${art ? ` · ◇ +${art} from the Carillon` : ''}`); openSite(id);
+}
+function tend(id){
+  const g = S.guardians[id], s = siteById(id);
+  if (distToMe(s.lat,s.lng) > SITE_RANGE_M) return toast('Get closer to your guardian.');
+  if (S.mana[g.type] + S.mana.Colorless < TEND_COST) return toast(`Tending costs ${TEND_COST} ${g.type} mana.`);
+  if (g.fort>=3 && g.hp>=g.maxHp) return toast('Fully fortified and healed.');
+  pay(g.type, TEND_COST); g.fort = Math.min(3, g.fort+1); g.hp = g.maxHp; save(); renderSites();
+  toast(`🛡️ Fortified (${g.fort}/3) and healed.`); openSite(id);
+}
+
+/* =====================================================================
+   CARD RENDERING
+   ===================================================================== */
+function cardHTML(c, o={}){
+  const T = TYPES[c.type], extra = o.eff!=null ? o.eff - c.pow : 0;
+  return `<div class="card r${c.rar} ${o.cls||''}" style="--tc:${T.color}" ${o.attr||''}>
+    <div class="ctop"><span class="cost" style="background:${T.color}">${c.cost}</span><span>${T.icon} ${c.type}</span></div>
+    <div class="art">${c.emoji}</div>
+    <div class="cname">${esc(c.name)}</div>
+    <div class="stats"><span>⚔️ ${o.eff!=null ? o.eff : c.pow}${extra>0 ? ` <span class="boost">(+${extra})</span>` : extra<0 ? ` <span class="dim">(${extra})</span>` : ''}</span><span style="color:var(--tc)">${'★'.repeat(c.rar+1)}</span></div>
+    <div class="ab">${c.ab ? ABIL[c.ab].icon+' '+c.ab : '—'}</div>${o.tired ? `<div class="zz">😴 tired ${fmtMin(o.tired)}</div>` : ''}</div>`;
+}
+function cardLore(c){ const k = Object.keys(LORE.creatures).sort((a,b) => b.length-a.length).find(k => c.name.endsWith(k));
+  const v = k ? LORE.creatures[k] : null; return Array.isArray(v) ? { text:v[0], link:v[1] } : v ? { text:v } : null; }
+function plaqueHTML(id){ const p = LORE.sites[id]; if (!p) return '';
+  return `<div class="plaque">🏛️ ${esc(p[0])}${p[1] ? ` <a href="${p[1]}" target="_blank" rel="noopener">Read more →</a>` : ''}</div>`; }
+function guardianPanel(s,g){
+  const weak = TYPE_KEYS.filter(t => TYPES[t].beats===g.type);
+  return `<div class="gpanel" style="--tc:${T(g.type).color}"><div class="big">${gEmoji(g.type)}</div><div class="info">
+    <b>${g.owner==='you'?'👑 Your ':''}${T(g.type).icon} ${g.type} ${gName(g.type)}</b> · Lv ${g.level}
+    <div class="bar hp" style="margin:6px 0"><i style="width:${100*g.hp/g.maxHp}%"></i></div>
+    <span class="stat">❤️ ${g.hp}/${g.maxHp}</span>${g.owner==='you' ? `<span class="stat">🛡️ Fort ${g.fort}/3</span>` : ''}
+    ${LORE.guardians[g.type] ? `<div class="flavor">“${esc(LORE.guardians[g.type])}”</div>` : ''}
+    <div class="dim" style="font-size:12px">${weak.length ? 'Weak to '+weak.map(t => TYPES[t].icon+' '+t).join(', ') : 'No weakness, no strength. Every faction fights it evenly.'}</div></div></div>`;
+}
+
+/* =====================================================================
+   SITE SHEET (well + seat)
+   ===================================================================== */
+function openSite(id){
+  const s = siteById(id), g = S.guardians[id], d = distToMe(s.lat,s.lng), near = d <= SITE_RANGE_M;
+  const ready = wellReady(id), cd = WELL_COOLDOWN_MIN*60000 - (Date.now()-(S.wells[id]||0));
+  let seat;
+  if (!g) seat = `<p>⛲ <b>Empty seat.</b> Topple a guardian anywhere on campus, and your final card can summon its faction's guardian here.</p>`;
+  else if (g.owner==='you') seat = guardianPanel(s,g) + `<p class="dim">Rival students raid guardians. Tending heals your guardian and fortifies it against raids (−10% raid success per level).</p>
+    <div class="row"><button class="mana" style="background:${T(g.type).color}" data-act="tend" data-arg="${id}" ${near?'':'disabled'}>🛡️ Tend (${T(g.type).icon}${TEND_COST})</button></div>`;
+  else seat = guardianPanel(s,g) + `<p class="dim">Its wounds stay between attempts. It heals ${GUARDIAN_REGEN} HP every ${GUARDIAN_REGEN_MIN} min.</p>
+    <div class="row"><button class="primary" data-act="challenge" data-arg="${id}" ${near?'':'disabled'}>${near ? '⚔️ Challenge' : 'You\'re '+fmtDist(d)+' away'}</button></div>`;
+  openSheet(`<h2>${esc(s.name)}</h2>
+    ${plaqueHTML(id)}
+    <p class="dim">${s.aff ? `Home turf of ${TYPES[s.aff].icon} <b>${s.aff}</b>: ${TYPES[s.aff].units}. ${s.aff} cards hit +1 here.` : 'Commons: no faction calls this home.'}</p>
+    <div class="box">💧 <b>${s.aff ? T(s.aff).icon+' '+s.aff+' well' : 'Commons well'}</b> · ${ready ? 'ready' : 'refills in '+fmtMin(cd)}
+      <div class="row" style="margin-top:8px">${s.aff
+        ? `<button class="mana" style="background:${T(s.aff).color}" data-act="well" data-arg="${id}" ${near && ready ? '' : 'disabled'}>Draw ${T(s.aff).icon} ${s.aff} mana (+${WELL_GIVE}${g && g.owner==='you' ? '+'+WELL_BLESS : ''})</button>`
+        : TYPE_KEYS.map(t => `<button class="mana" style="background:${T(t).color};flex:1 1 18%" data-act="well" data-arg="${id}|${t}" ${near && ready ? '' : 'disabled'}>${T(t).icon}+${COMMONS_GIVE}</button>`).join('')}</div>
+      ${s.aff ? '' : '<p class="dim" style="font-size:12px;margin-bottom:0">Commons wells give a smaller amount of any one color.</p>'}</div>
+    ${seat}
+    ${S.editor ? `<div class="box">🛠️ <b>Site editor</b><div class="row"><button data-act="movesite" data-arg="${id}">📍 Move this site to my position</button></div></div>` : ''}
+    <div class="row"><button data-act="close">Close</button></div>`);
+}
+
+function openTower(){
+  const w = wardenWindow(), live = currentWarden(), d = distToMe(TOWER.lat,TOWER.lng), near = d <= SITE_RANGE_M;
+  const h = S.artifact && S.artifact.holder;
+  let body;
+  if (live) body = guardianPanel(TOWER, live) + `<p class="dim">It leaves in ${fmtMin(live.end-Date.now())}. Its wounds last until then.</p>
+    <div class="row"><button class="primary" data-act="challenge" data-arg="tower" ${near?'':'disabled'}>${near ? '⚔️ Challenge the Warden' : 'You\'re '+fmtDist(d)+' away'}</button></div>`;
+  else if (w.upcoming) body = `<p>🔕 The bells are quiet… <b>The Warden appears in ${fmtMin(w.start-Date.now())}.</b></p>`;
+  else body = `<p>🔕 The bells are quiet. The Warden might appear in the next window, starting in ${fmtMin(w.next-Date.now())}.</p>`;
+  openSheet(`<h2>🗼 Elliott Tower</h2>
+    ${plaqueHTML('tower')}
+    <p class="dim">Neutral ground. No well and no faction seat, only the Bell Warden and the Carillon.</p>
+    <div class="box">🔔 <b>The Carillon</b> · held by <b>${holderLabel(h)}</b><br><span class="dim" style="font-size:12px">The holder gets ◇ colorless mana, which pays for any card${h && h!=='you' ? `. While ${h} students hold it, their raids are ${Math.round(ARTIFACT_RAID_BONUS*100)}% more likely to succeed` : ''}.</span></div>
+    ${body}
+    ${S.editor ? `<div class="box">🛠️ <b>Site editor</b><div class="row"><button data-act="movesite" data-arg="tower">📍 Move this site to my position</button></div></div>` : ''}
+    <div class="row"><button data-act="close">Close</button></div>`);
+}
+
+/* =====================================================================
+   BATTLE — spend carried mana to play cards; guardian strikes back each turn
+   ===================================================================== */
+let B = null;
+function effPow(c){ const g = B.g; let p = c.pow + boostFor(c.type, B.site);
+  if (TYPES[c.type].beats===g.type) p += 2; if (T(g.type).beats===c.type) p -= 1; return Math.max(1,p); }
+const rollIntent = g => 3 + g.level*2 + Math.floor(Math.random()*3);
+function drawOne(){ if (!B.draw.length){ if (!B.discard.length) return; B.draw = shuffle(B.discard); B.discard = []; } B.hand.push(B.draw.pop()); }
+function challenge(id){
+  const all = S.deck.map(u => S.cards.find(c => c.uid===u)).filter(Boolean), deck = all.filter(c => !tiredLeft(c.uid));
+  if (all.length < DECK_MIN) return toast(`You need at least ${DECK_MIN} cards in your deck (🃏 Cards tab).`);
+  if (deck.length < DECK_MIN){ const soon = Math.min(...all.filter(c => tiredLeft(c.uid)).map(c => tiredLeft(c.uid)));
+    return toast(`Only ${deck.length} rested cards. You need ${DECK_MIN}. Swap in fresh cards, or wait ${fmtMin(soon)}.`); }
+  if (!deck.some(canPay)) return toast('You can\'t afford any card in your deck. Visit wells that match your cards\' colors.');
+  const s = siteById(id), g = id==='tower' ? currentWarden() : S.guardians[id];
+  if (!g) return toast('Nothing to fight here right now.');
+  B = { site:s, g, draw:shuffle(deck.map(c => Object.assign({},c))), hand:[], discard:[], resolve:RESOLVE, block:0, rally:0,
+        disrupted:false, played:new Set(), log:[`⚠️ If you lose, every card you played gets tired for ${TIRED_MIN} min, and each has a ${Math.round(BREAK_CHANCE*100)}% chance to break for good. Retreating only tires them.`, 'The guardian rises to meet you. Spend mana to play cards, then end your turn.'], over:false };
+  B.intent = rollIntent(B.g); for (let k=0;k<HAND_SIZE;k++) drawOne(); renderBattle();
+}
+function renderBattle(){
+  const g = B.g, hit = Math.max(0, B.intent - (B.disrupted?2:0));
+  openSheet(`<h2>⚔️ ${esc(B.site.name)}</h2>
+    ${guardianPanel(B.site,g)}
+    <div class="box" style="margin-top:8px">Next strike: <b>🗡️ ${hit}</b>${B.disrupted ? ' <span class="boost">(disrupted −2)</span>' : T(B.g.type).beats===null && !TYPE_KEYS.some(t => TYPES[t].beats===B.g.type) ? ` <span class="dim">· it can't be disrupted</span>` : ` <span class="dim">· play a card it's weak to for −2</span>`}</div>
+    <div><span class="stat">❤️ Resolve ${B.resolve}/${RESOLVE}</span><span class="stat">🛡️ Block ${B.block}</span>${B.rally?`<span class="stat">📣 +${B.rally}</span>`:''}</div>
+    <div class="mstrip" style="border-radius:10px;margin-top:6px">${document.getElementById('manaStrip').innerHTML}</div>
+    <div class="hand">${B.hand.map((c,k) => cardHTML(c,{ eff:effPow(c)+B.rally, cls: canPay(c) ? 'pickable' : 'cant', attr:`data-act="play" data-arg="${k}"` })).join('')}</div>
+    <div class="wheel">${WHEEL} · Draw ${B.draw.length} · Discard ${B.discard.length}</div>
+    <div class="log">${B.log.slice(0,8).map(l => `<div>${esc(l)}</div>`).join('')}</div>
+    <div class="row"><button data-act="retreat">🏳️ Retreat</button><button class="primary" data-act="endturn">End turn</button></div>`, true);
+}
+function playCard(k){
+  if (B.over) return; const c = B.hand[k]; if (!c) return;
+  if (!canPay(c)) return toast(`Needs ${c.cost} ${c.type} mana (colorless ◇ can cover the gap).`);
+  const usedC = pay(c.type, c.cost); B.spent = (B.spent||0) + c.cost; B.played.add(c.uid); const d = effPow(c) + B.rally; B.rally = 0;
+  B.g.hp = Math.max(0, B.g.hp - d);
+  let line = `${c.emoji} ${c.name} hits for ${d}${usedC ? ` (◇${usedC} colorless)` : ''}`;
+  if (TYPES[c.type].beats===B.g.type){ B.disrupted = true; line += ' (super effective, guardian disrupted)'; }
+  if (c.ab==='Guard'){ const b = Math.ceil(c.pow/2); B.block += b; line += `, 🛡️ +${b} block`; }
+  if (c.ab==='Mend'){ B.resolve = Math.min(RESOLVE, B.resolve+3); line += ', 💚 +3 resolve'; }
+  if (c.ab==='Rally'){ B.rally = 3; line += ', 📣 next card +3'; }
+  B.hand.splice(k,1); B.discard.push(c);
+  if (c.ab==='Swift'){ drawOne(); line += ', ⚡ drew a card'; }
+  B.log.unshift(line); save();
+  if (B.g.hp<=0) return win(c);
+  renderBattle();
+}
+function endTurn(){
+  if (B.over) return;
+  const dmg = Math.max(0, B.intent - (B.disrupted?2:0)), absorbed = Math.min(B.block, dmg);
+  B.resolve -= dmg - absorbed;
+  B.log.unshift(`${gEmoji(B.g.type)} The guardian strikes for ${dmg}${absorbed ? ` (${absorbed} blocked)` : ''}.`);
+  B.block = 0; B.disrupted = false; B.intent = rollIntent(B.g);
+  while (B.hand.length < HAND_SIZE && (B.draw.length || B.discard.length)) drawOne();
+  if (B.resolve<=0) return lose('Your resolve breaks.');
+  renderBattle();
+}
+function lose(why, retreat){
+  B.over = true; B.g.upd = Date.now();
+  const broken = [], tired = [];
+  for (const uid of B.played){ const c = S.cards.find(x => x.uid===uid); if (!c) continue;
+    if (!retreat && Math.random() < (c.rar>=2 ? BREAK_CHANCE_RARE : BREAK_CHANCE)){
+      broken.push(c); S.cards = S.cards.filter(x => x.uid!==uid); S.deck = S.deck.filter(u => u!==uid); delete S.tired[uid]; }
+    else { S.tired[uid] = Date.now() + TIRED_MIN*60000; tired.push(c); } }
+  if (broken.length) news(`💔 ${broken.map(c => c.emoji+' '+c.name).join(', ')} broke in the fight at ${B.site.name}.`);
+  save(); renderSites();
+  openSheet(`<h2>🏳️ ${why}</h2>
+    <p><b>Cost:</b> the ${B.spent||0} mana you spent is gone.</p>
+    ${tired.length ? `<p>😴 <b>Tired for ${TIRED_MIN} min:</b> ${tired.map(c => c.emoji+' '+esc(c.name)).join(', ')}. They sit out fights until they rest.</p>` : ''}
+    ${broken.length ? `<div class="box" style="border:2px solid #e0524c">💔 <b>Broken forever:</b><div class="reveal">${broken.map(c => cardHTML(c,{cls:'tired'})).join('')}</div><p class="dim" style="margin-bottom:0">Watch for packs to rebuild your deck.</p></div>`
+      : !retreat && tired.length ? '<p class="dim">Lucky: none of your cards broke this time.</p>' : ''}
+    <p>The ${gName(B.g.type)} keeps its wounds: ❤️ ${B.g.hp}/${B.g.maxHp}. It heals ${GUARDIAN_REGEN} every ${GUARDIAN_REGEN_MIN} min, so come back soon with more mana, or bring friends.</p>
+    <div class="row"><button class="primary" data-act="close">Back to map</button></div>`);
+}
+let pendingSummon = null;
+function win(final){
+  B.over = true; const s = B.site, old = B.g;
+  if (s.id==='tower'){
+    old.beaten = 'you'; const had = S.artifact && S.artifact.holder; S.artifact = { holder:'you', since:Date.now() };
+    const grant = Math.min(ARTIFACT_GRANT, COLORLESS_MAX - S.mana.Colorless); S.mana.Colorless += grant;
+    const trophy = addCard(makeCard(rngFrom('bell|'+Date.now()), pick(Math.random,TYPE_KEYS), 2), 'the Bell Warden');
+    news(`🔔 You toppled the Bell Warden at Elliott Tower and claimed the Carillon${had && had!=='you' ? ' from '+had+' students' : ''}!`);
+    save(); renderSites(); updateBanner();
+    openSheet(`<h2>🔔 The Carillon is yours!</h2>
+      <p>◇ +${grant} colorless mana. While you hold the Carillon, every well also gives you ◇ +${ARTIFACT_WELL_BONUS}. Colorless mana pays for any faction's cards.</p>
+      <p class="dim">You hold it until someone topples the next Bell Warden. Watch for the bells.</p>
+      <div class="reveal">${cardHTML(trophy)}</div><div class="row"><button class="primary" data-act="close">Ring it</button></div>`);
+    return; }
+  delete S.guardians[s.id]; S.toppled++;
+  const trophy = addCard(makeCard(rngFrom('trophy|'+s.id+'|'+Date.now()), old.type, 2), 'toppling the guardian at '+s.name);
+  news(`⚔️ You toppled the ${old.type} ${gName(old.type)} at ${s.name} with ${final.emoji} ${final.name}.`);
+  pendingSummon = { type:final.type, rar:final.rar, from:s.id }; save(); renderSites();
+  const empties = SITES.filter(x => !S.guardians[x.id] && x.id!==s.id)
+    .sort((a,b) => (b.aff===final.type) - (a.aff===final.type) || distM(s.lat,s.lng,a.lat,a.lng) - distM(s.lat,s.lng,b.lat,b.lng));
+  const best = empties[0], lvl = x => Math.min(3, 1 + (final.rar>=2?1:0) + (x.aff===final.type?1:0));
+  const seatBtn = x => `<button style="--tc:${x.aff ? TYPES[x.aff].color : '#777'}" data-act="summon" data-arg="${x.id}">
+      <span style="font-size:22px">${x.aff===final.type ? '🏠' : '⛲'}</span><span><b>${esc(x.name)}</b> · Lv ${lvl(x)}<br><span class="dim" style="font-size:12px">${x.aff ? x.aff+' turf' : 'Commons'} · ${fmtDist(distM(s.lat,s.lng,x.lat,x.lng))} from here</span></span></button>`;
+  openSheet(`<h2>🏆 Guardian toppled!</h2>
+    <div class="gpanel" style="--tc:${TYPES[trophy.type].color}"><div class="big" style="font-size:38px">${trophy.emoji}</div><div class="info">
+      <b>Trophy: ${esc(trophy.name)}</b><br><span class="dim" style="font-size:12px">${RARITY[trophy.rar]} ${trophy.type} card, added to your collection</span></div></div>
+    <div class="box" style="margin-top:12px;border:2px solid ${TYPES[final.type].color}">
+      <p style="margin-top:0">Your final blow was ${final.emoji} <b>${TYPES[final.type].icon} ${final.type}</b>, so a <b>${gName(final.type)}</b> answers your call. ${esc(s.name)} now stands empty.</p>
+      <p><b>One last step: choose where your guardian rises.</b></p>
+      <button class="primary" style="width:100%;padding:12px" data-act="summon" data-arg="${best.id}">${gEmoji(final.type)} Summon at ${esc(best.name)} (Lv ${lvl(best)})</button>
+      <p class="dim" style="font-size:12px;margin-bottom:0">${best.aff===final.type ? `That's ${final.type} home turf, which gives your guardian +1 level.` : 'That is the closest empty seat.'}</p></div>
+    <p class="dim">Or choose another empty seat:</p>
+    <div class="glist">${empties.slice(1,4).map(seatBtn).join('')}</div>
+    ${empties.length>4 ? `<details><summary class="dim" style="padding:8px 0;cursor:pointer">Show all ${empties.length} empty seats</summary><div class="glist">${empties.slice(4).map(seatBtn).join('')}</div></details>` : ''}`, true);
+}
+function summon(id){
+  if (!pendingSummon) return; const { type, rar } = pendingSummon, s = siteById(id);
+  const level = Math.min(3, 1 + (rar>=2?1:0) + (s.aff===type?1:0));
+  S.guardians[id] = makeGuardian(type, 'you', level); S.summoned++; pendingSummon = null;
+  news(`👑 You summoned a ${type} ${gName(type)} (Lv ${level}) at ${s.name}. ${type} cards now hit harder across campus.`);
+  save(); renderSites(); renderPacks(); updateBanner(); closeSheet();
+  map.setView([s.lat,s.lng], 18); toast(`👑 Your ${gName(type)} guards ${s.name}!`);
+}
+
+/* =====================================================================
+   CARDS TAB — allegiance + deck building
+   ===================================================================== */
+let cardFilter = 'All';
+function allegiance(){ const n = {}; TYPE_KEYS.forEach(t => n[t]=0);
+  S.deck.forEach(u => { const c = S.cards.find(x => x.uid===u); if (c) n[c.type]++; }); return n; }
+function renderCards(){
+  const el = document.getElementById('cardsPage'), al = allegiance(), top = TYPE_KEYS.reduce((a,b) => al[b]>al[a]?b:a);
+  const list = S.cards.filter(c => cardFilter==='All' || c.type===cardFilter).sort((a,b) => b.rar-a.rar || a.type.localeCompare(b.type) || b.pow-a.pow);
+  el.innerHTML = `<h2>Your deck · ${S.deck.length}/${DECK_MAX}</h2>
+    <p class="dim">${S.deck.length<DECK_MIN ? `⚠️ You need at least ${DECK_MIN} cards to challenge guardians.` : 'Tap a card to read it and add it to your deck or take it out.'}
+      ${S.deck.some(u => tiredLeft(u)) ? `<br>😴 ${S.deck.filter(u => tiredLeft(u)).length} deck card(s) are tired and will sit out fights until they rest.` : ''}</p>
+    <div class="box"><div class="allegiance">${TYPE_KEYS.map(t => `<span>${TYPES[t].icon} ${t}</span>
+      <div class="bar" style="--tc:${TYPES[t].color}"><i style="width:${S.deck.length ? 100*al[t]/S.deck.length : 0}%"></i></div><span>${al[t]}</span>`).join('')}</div>
+      ${al[top] ? `<p style="margin-bottom:0">Your deck leans <b>${TYPES[top].icon} ${top}</b>: ${TYPES[top].units}.</p>` : ''}
+      <p class="dim" style="font-size:12px;margin-bottom:0">Potency: each guardian of a faction on campus gives that faction's cards +1. Home turf gives another +1.</p></div>
+    <div class="row" style="margin:0 0 6px"><button data-act="autodeck">✨ Auto-build</button><button data-act="cleardeck">Clear deck</button></div>
+    <div class="chips">${['All',...TYPE_KEYS].map(t => `<button class="${t===cardFilter?'on':''}" data-act="filter" data-arg="${t}">${t==='All'?'All ('+S.cards.length+')':TYPES[t].icon+' '+t}</button>`).join('')}</div>
+    <div class="wheel">${WHEEL}<br>Each faction beats the next: +2 damage, and it disrupts the guardian's strike.</div>
+    <p class="dim" style="font-size:12px">${ABIL_KEYS.map(a => ABIL[a].icon+' <b>'+a+'</b>: '+ABIL[a].text).join('<br>')}</p>
+    <div class="grid">${list.map(c => { const tl = tiredLeft(c.uid); return cardHTML(c,{ tired:tl, cls:'pickable'+(S.deck.includes(c.uid)?' indeck':'')+(tl?' tired':''), attr:`data-act="carddetail" data-arg="${c.uid}"` }); }).join('')}</div>`;
+}
+function toggleDeck(uid){ const k = S.deck.indexOf(uid);
+  if (k>=0) S.deck.splice(k,1); else if (S.deck.length<DECK_MAX) S.deck.push(uid); else return toast(`Decks hold ${DECK_MAX} cards. Remove one first.`);
+  save(); renderCards(); cardDetail(uid); }
+function cardDetail(uid){
+  const c = S.cards.find(x => x.uid===uid); if (!c) return; const l = cardLore(c), inDeck = S.deck.includes(uid), tl = tiredLeft(uid);
+  openSheet(`<div class="reveal">${cardHTML(c,{ tired:tl, cls:tl?'tired':'' })}</div>
+    ${l ? `<p class="flavor" style="text-align:center">“${esc(l.text)}”${l.link ? `<br><a href="${l.link}" target="_blank" rel="noopener" style="color:#8cc8ff;font-style:normal">Source →</a>` : ''}</p>` : ''}
+    <p class="dim" style="text-align:center">${RARITY[c.rar]} ${c.type} · costs ${c.cost} ${c.type} mana · found in ${esc(c.origin||'?')}</p>
+    ${c.ab ? `<p style="text-align:center">${ABIL[c.ab].icon} <b>${c.ab}</b>: ${ABIL[c.ab].text}</p>` : ''}
+    <div class="row"><button data-act="close">Close</button><button class="primary" data-act="toggledeck" data-arg="${uid}">${inDeck ? 'Take out of deck' : 'Add to deck'}</button></div>`); }
+function autoDeck(){ // favor the faction you hold most of, then efficiency
+  const n = {}; S.cards.forEach(c => n[c.type]=(n[c.type]||0)+1);
+  const score = c => c.pow/c.cost + (n[c.type]||0)*0.3 + c.rar + (c.ab?0.5:0);
+  S.deck = [...S.cards].sort((a,b) => score(b)-score(a)).slice(0,DECK_MAX).map(c => c.uid); save(); renderCards(); }
+
+/* =====================================================================
+   CAMPUS TAB — guardians + news feed
+   ===================================================================== */
+function renderNews(){
+  const el = document.getElementById('newsPage'), gl = guardianList();
+  el.innerHTML = `<button style="width:100%;margin-bottom:12px;background:#2a241a;border:1px solid #6b5a33" data-act="history">🪶 History beneath the game: the land, the treaty and the campus</button>
+    <h2>Guardians · ${gl.length}/${MAX_GUARDIANS}</h2>
+    <p class="dim">Only ${MAX_GUARDIANS} guardians can stand at once, so two factions are always shut out and have to topple someone.</p>
+    <div class="glist">${gl.map(({site,g}) => `<button style="--tc:${TYPES[g.type].color}" data-act="fly" data-arg="${site.id}">
+      <span style="font-size:26px">${gEmoji(g.type)}</span><span><b>${g.owner==='you'?'👑 ':''}${g.type} ${gName(g.type)}</b> · Lv ${g.level}<br>
+      <span class="dim" style="font-size:12px">${esc(site.name)} · ❤️ ${g.hp}/${g.maxHp}${g.owner==='you' ? ' · 🛡️ '+g.fort+'/3' : ''}</span></span></button>`).join('')}</div>
+    <div class="box">🔔 <b>The Carillon</b> (Elliott Tower) · held by <b>${holderLabel(S.artifact && S.artifact.holder)}</b><br>
+      <span class="dim" style="font-size:12px">${currentWarden() ? 'The Bell Warden is out right now!' : 'The Bell Warden appears at random. Whoever topples it takes the Carillon.'}</span></div>
+    <p class="dim" style="font-size:12px">You've toppled ${S.toppled} and summoned ${S.summoned}. Rival raids happen about every ${RIVAL_TICK_MIN} min in this prototype.</p>
+    <h2 style="margin-top:14px">Campus news</h2>
+    <div class="news">${S.news.map(n => `<div><span class="t">${new Date(n.t).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</span><br>${esc(n.text)}</div>`).join('') || '<p class="dim">Quiet so far…</p>'}</div>`;
+}
+
+/* =====================================================================
+   HELP + SITE EDITOR
+   ===================================================================== */
+function showHelp(){
+  openSheet(`<h2>How to play</h2>
+    <p>💧 <b>Wells</b> give mana in their building's color: Kresge gives 📜 Lore, the Engineering Center gives ⚙️ Gear, and so on. Cards cost their own color. Commons wells (the Oakland Center, Hamlin) give a little of any color. Carry up to ${MANA_MAX} of each. Each well refills ${WELL_COOLDOWN_MIN} min after you use it.</p>
+    <p>🔔 <b>Elliott Tower</b> belongs to no faction. A colorless Bell Warden appears there at random times. Whoever topples it holds the <b>Carillon</b>, which gives ◇ colorless mana. Colorless mana pays for any card, and wells give the holder extra. You hold the Carillon until someone topples the next Warden.</p>
+    <p>🎁 <b>Packs</b> pop up around campus for a few minutes and then vanish. Walk into a pack's square to open it. Packs near a guardian usually hold that guardian's faction.</p>
+    <p>🃏 <b>Decks</b> hold ${DECK_MIN}–${DECK_MAX} cards. Every card costs mana to play, so a fight spends what you gathered.</p>
+    <p>💔 <b>Losing hurts.</b> Every card you played in a lost fight is tired for ${TIRED_MIN} min, and each has a ${Math.round(BREAK_CHANCE*100)}% chance to <b>break</b> and be gone for good (rare cards are tougher). Retreating only tires them. Keep collecting packs, because a deep collection is your insurance.</p>
+    <p>🛡️ <b>Guardians.</b> Only ${MAX_GUARDIANS} can stand at once. Defeat one and its seat goes empty. The faction of your <b>final card</b> summons a guardian at an empty seat you choose. Guardians make their faction's cards stronger everywhere and draw those cards to nearby packs.</p>
+    <p>👑 <b>Defend.</b> Rival students raid guardians. Tend yours with mana to fortify it, and its well gives you extra mana.</p>
+    <div class="wheel">${WHEEL}</div>
+    ${PREVIEW ? '<p class="dim">🧪 <b>Practice board:</b> no real map or GPS here, and places are approximate. Tap to move.</p>' : ''}
+    <p>🏛️ <b>Plaques.</b> Every site carries a bit of real OU history, with a link to read more. Cards have their own stories too.</p>
+    <div class="row" style="margin:4px 0 10px"><button style="background:#2a241a;border:1px solid #6b5a33" data-act="history">🪶 History beneath the game</button></div>
+    <p class="dim">🔒 Your coordinates stay on your device. In this prototype, rival students are computer-controlled.</p>
+    <div class="box">🛠️ <b>Site editor</b> (for setting up the map): <button data-act="editor">${S.editor ? 'On, tap to turn off' : 'Off, tap to turn on'}</button>
+      ${S.editor ? `<p class="dim" style="font-size:12px">Stand at a building (or tap there in test mode), open its site, and choose “Move this site to my position.” Then copy the list and send it to whoever maintains the code.</p>
+      <div class="row"><button data-act="copysites">📋 Copy site list</button></div><textarea id="siteDump" readonly>${esc(JSON.stringify([TOWER,...SITES].map(s => [s.id,s.name,+s.lat.toFixed(6),+s.lng.toFixed(6),s.aff])))}</textarea>` : ''}</div>
+    <div class="row"><button data-act="reset">Reset game</button><button class="primary" data-act="close">Let's go</button></div>`);
+  S.seenHelp = true; save();
+}
+function moveSite(id){ if (!me) return; S.siteOverrides[id] = [me.lat, me.lng]; save(); buildSites(); renderSites(); toast('📍 Site moved.'); openSite(id); }
+function copySites(){ const t = document.getElementById('siteDump').value;
+  try { navigator.clipboard.writeText(t).then(() => toast('Copied!'), () => toast('Copy blocked. Select the text and copy it yourself.')); }
+  catch(e){ toast('Copy blocked. Select the text and copy it yourself.'); } }
+let resetArmed = false;
+function resetGame(btn){ if (!resetArmed){ resetArmed = true; btn.textContent = 'Tap again to erase everything'; return; }
+  try { localStorage.removeItem(STORE_KEY); } catch(e){} location.reload(); }
+
+/* =====================================================================
+   GPS / TEST MODE
+   ===================================================================== */
+let watchId = null;
+function setMode(m){
+  if (PREVIEW){ m = 'test'; document.getElementById('modeBtn').style.display = 'none'; }
+  S.mode = m; save(); document.getElementById('modeBtn').textContent = m==='gps' ? '📡' : '👆';
+  if (watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId = null; }
+  if (m==='gps'){
+    if (!navigator.geolocation || !window.isSecureContext){ toast('Location needs HTTPS. Using test mode.'); return setMode('test'); }
+    watchId = navigator.geolocation.watchPosition(p => { if (S.mode==='gps'){ const first = !me; setPos(p.coords.latitude,p.coords.longitude); if (first) map.setView([me.lat,me.lng],18); } },
+      err => { toast('Location unavailable ('+err.message+'). Switched to test mode.'); setMode('test'); },
+      { enableHighAccuracy:true, maximumAge:5000, timeout:20000 });
+  } else { if (!me || !inCampus(me.lat,me.lng)) setPos(...CAMPUS.center); toast('Tap anywhere on the map to walk there.'); }
+  updateBanner();
+}
+
+/* =====================================================================
+   UI PLUMBING
+   ===================================================================== */
+let sheetLocked = false;
+function openSheet(html, locked=false){ sheetLocked = locked; document.getElementById('sheet').innerHTML = html; document.getElementById('modal').hidden = false; }
+function closeSheet(){ sheetLocked = false; document.getElementById('modal').hidden = true; }
+document.getElementById('modal').addEventListener('click', e => { if (e.target.id==='modal' && !sheetLocked) closeSheet(); });
+const ACT = {
+  close: closeSheet, well: drawMana, tend, challenge: id => challenge(id), play: k => playCard(+k), endturn: endTurn,
+  retreat: () => lose('You retreat.', true), summon, movesite: moveSite, copysites: copySites,
+  editor: () => { S.editor = !S.editor; save(); showHelp(); }, reset: (a,btn) => resetGame(btn),
+  autodeck: autoDeck, cleardeck: () => { S.deck = []; save(); renderCards(); },
+  filter: t => { cardFilter = t; renderCards(); }, toggledeck: u => toggleDeck(+u), carddetail: u => cardDetail(+u),
+  history: () => openSheet(HISTORY_HTML + '<div class="row"><button class="primary" data-act="close">Close</button></div>'),
+  fly: id => { const s = siteById(id); showTab('Map'); map.setView([s.lat,s.lng],18); openSite(id); },
+};
+document.body.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
+  const f = ACT[b.dataset.act]; if (f) f(b.dataset.arg, b); });
+let toastT; function toast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2800); }
+function showTab(t){
+  ['Map','Cards','News','Help'].forEach(x => document.getElementById('tab'+x).classList.toggle('on', x===t));
+  document.getElementById('cardsPage').hidden = t!=='Cards'; document.getElementById('newsPage').hidden = t!=='News';
+  if (t==='Cards') renderCards(); if (t==='News') renderNews(); if (t==='Help') showHelp(); if (t==='Map') map.invalidateSize();
+}
+['Map','Cards','News','Help'].forEach(t => document.getElementById('tab'+t).onclick = () => showTab(t));
+document.getElementById('modeBtn').onclick = () => setMode(S.mode==='gps' ? 'test' : 'gps');
+document.getElementById('centerBtn').onclick = () => me ? map.setView([me.lat,me.lng],18) : map.setView(CAMPUS.center,17);
+
+function heartbeat(){
+  const before = JSON.stringify(S.guardians);
+  regenGuardians(); if (!(B && !B.over)) rivalCatchUp(); prunePacks();
+  for (const u in S.tired) if (!tiredLeft(u)) delete S.tired[u];
+  save(); renderSites();
+  renderPacks(); updateBanner(); hud();
+  if (!document.getElementById('newsPage').hidden) renderNews();
+}
+
+/* =====================================================================
+   BOOT
+   ===================================================================== */
+(function init(){
+  load(); buildSites();
+  if (!S.started){
+    const r = rngFrom('starter|'+Date.now());
+    TYPE_KEYS.forEach(t => addCard(makeCard(r,t,0),'starter pack')); addCard(makeCard(r,pick(r,TYPE_KEYS),1),'starter pack');
+    seedGuardians(); S.lastTick = Date.now(); S.started = true;
+    news(`🌅 ${MAX_GUARDIANS} guardians have risen on campus: ${guardianList().map(x => x.g.type+' at '+x.site.name).join(', ')}.`);
+  }
+  save(); renderSites(); setMode(S.mode); heartbeat();
+  setInterval(heartbeat, 15000);
+  if (!S.seenHelp) showHelp();
+})();
+</script>
+</body>
+</html>
