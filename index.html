@@ -76,6 +76,10 @@
   .site.raid { animation:raidpulse 1s ease-in-out infinite; }
   .site .swords { position:absolute; left:-12px; bottom:-10px; font-size:18px; filter:drop-shadow(0 0 3px #f00); }
   @keyframes raidpulse { 0%,100%{ box-shadow:0 0 0 3px #ff3b30, 0 0 8px 2px #ff3b30; } 50%{ box-shadow:0 0 0 5px #ff3b30, 0 0 22px 8px #ff3b30; } }
+  .rumor { width:52px; height:52px; border-radius:50%; background:radial-gradient(#b8fff6,#0e6b73); display:flex; align-items:center; justify-content:center; font-size:28px; animation:rumor 2s ease-in-out infinite; }
+  @keyframes rumor { 0%,100%{ box-shadow:0 0 12px 4px #4fd1c5; transform:scale(1); } 50%{ box-shadow:0 0 34px 14px #4fd1c5; transform:scale(1.08); } }
+  .site .bubbles { position:absolute; right:-12px; top:-14px; font-size:16px; animation:bob 1.4s ease-in-out infinite; }
+  .card.mega { border-color:#4fd1c5; box-shadow:0 0 16px 4px #4fd1c5; background:linear-gradient(160deg,#0e3b40,#132126); }
   .me { width:20px; height:20px; border-radius:50%; background:#2f8cff; border:3px solid #fff; box-shadow:0 0 0 6px rgba(47,140,255,.3); }
   .lmlabel { background:rgba(0,0,0,.72); color:#fff; border:0; font-size:10px; padding:1px 5px; box-shadow:none; }
   .lmlabel::before { display:none; }
@@ -163,8 +167,8 @@ const LORE = {
     'Deer':                ['Michigan has named the white-tailed deer its state game mammal since 1997. A class of Zeeland fourth graders lobbied for it. Civic action works.', SRC.symbols],
     'Squirrel':            'Believes Squirrel Road was named in its honor. Collects tolls in acorns.',
     'Apple Tree Monster':  'Wakes up every fall and demands that you go to a cider mill.',
-    'Canada Goose':        'Not Canadian. Not afraid of you. Not leaving.',
-    'Lake-Effect Cloud':   'Soaks up water over the Great Lakes, then empties it all onto your commute.',
+    'Canada Goose':        'Not Canadian. Not afraid of you. Not leaving. Guards one patch of Bear Lake shoreline and won\'t say why.',
+    'Lake-Effect Cloud':   'Soaks up water over the Great Lakes and empties it onto your commute. It always slows down over Bear Lake, as if it\'s listening for something.',
     'Grizzly':             'An OU Golden Grizzly through and through. Hibernates through every 8 a.m. class.',
     'Golfer':              ['People have golfed on this land since John Dodge laid out a course on his estate in the early 1900s. This golfer has been looking for the same ball ever since.', 'https://oakland.edu/golf/history/'],
     'Disc Golf Monster':   'Lurks in Grizzly Oaks. Has eaten more discs than it has ever thrown.',
@@ -174,10 +178,11 @@ const LORE = {
     'Parking Attendant':   'Has waved ten thousand cars into the Meadow Brook Amphitheatre lots and never once smiled.',
     'Theater Tech Crew':   'Dressed in black so you won\'t see them. You\'d notice the moment they were gone.',
   },
+  rumor: 'Every class has heard it from someone who heard it from someone. It was true.',
   guardians: {
     Lore:      'Cumulative. Worth 40% of your grade. No notes allowed.',
     Gear:      'Built from every orange barrel that ever closed a lane on Walton Boulevard.',
-    Wild:      'Rooted here long before the first building went up.',
+    Wild:      'Rooted here long before the first building went up. Its roots reach the lake, and it won\'t say what they found down there.',
     Might:     'Never loses. Sometimes takes a strategic nap.',
     Muse:      'Demands an encore. Always.',
     Colorless: 'Forty-nine bells, and one of them is always listening.',
@@ -192,7 +197,7 @@ const LORE = {
     ec:          ['Built in 2014 as the home of the School of Engineering and Computer Science: 127,000 square feet of labs and classrooms.', SRC.buildings],
     dodge:       ['Named for John F. and Horace E. Dodge, who co-founded Dodge Brothers Motor Cars. John was Matilda Dodge Wilson\'s first husband. The Dodge fortune is part of how this campus came to exist.', SRC.buildings],
     hannah:      ['Named for John A. Hannah, the Michigan State president who helped create MSU–Oakland. He also chaired the U.S. Commission on Civil Rights, created in 1957, until 1969.', SRC.hannah],
-    bearlake:    ['No plaque here, just water and whoever is sitting beside it. The Wild faction\'s oldest well, according to the Wild faction.', null],
+    bearlake:    ['No plaque here, just water and whoever is sitting beside it. Some students swear something old rests at the bottom and surfaces when nobody expects it. Nobody has proven it. Yet.', null],
     odowd:       ['Named for Jan and Donald O\'Dowd. Donald taught psychology, became provost, and served as OU\'s president from 1970 to 1979.', SRC.buildings],
     hhb:         ['Opened in 2012 for nursing and the health sciences, and heated and cooled by 256 geothermal wells. This campus had wells long before the game did.', SRC.buildings],
     woods:       ['The Grizzly Oaks disc golf course winds through these trees. Mind the flying discs.', null],
@@ -264,6 +269,8 @@ const KEEPER_RESPAWN_MIN = 20, KEEPER_REWARD = 4, KEEPER_BLESS = 2;   // Well Ke
 const ATTUNE_HOURS = 2, ATTUNE_MAX = 3;                // each win: +1 attunement (regen +1/tick, cap +3), stacks to 3
 const SURGE_MS = 4000, SURGE_MAX = 6;                  // in a siege: +1 battle mana every 4 s (pays for any card)
 const RAID_MIN = 4, RAID_MAX = 7, RAID_START_CHANCE = 0.6, RAID_SEEN_M = 500;
+const RUMOR_SLOT_DAYS = 7, RUMOR_CHANCE = 0.8, RUMOR_WINDOW_H = 3, RUMOR_STIR_MIN = 60, RUMOR_HOLD_H = 24, RUMOR_POW = 30, RUMOR_RANGE_M = 60;
+// Prototype pace: about once a week. For the real program, ~1–2 per semester (e.g. RUMOR_SLOT_DAYS = 50).
 const TIRED_MIN = 60, BREAK_CHANCE = 0.15, BREAK_CHANCE_RARE = 0.07;   // after a loss: played cards tire; some break
 const STORE_KEY = 'oucc4';
 
@@ -304,6 +311,7 @@ const ABIL = {
   Rally: { icon:'📣', text:'Your next card this battle hits +3 harder.' },
 };
 const ABIL_KEYS = Object.keys(ABIL);
+ABIL.Secret = { icon:'🌊', text:'Costs nothing. Breaks through any ward, silences the next strike and restores everyone\'s resolve. Single use.' };
 const RARITY = ['Common','Uncommon','Rare','Legendary'];
 
 /* Sites = wells + guardian seats. Affinity = the faction whose academic home this is (null = commons).
@@ -343,16 +351,17 @@ function rollRarity(r){ const x=r(); return x<0.01?3 : x<0.08?2 : x<0.30?1 : 0; 
 function makeCard(r, type, rar){
   const [emoji,noun] = pick(r, CREATURES[type]), place = pick(r, PLACES[type]);
   const cost = 1 + Math.floor(r()*3);
-  const ab = r() < 0.25 + 0.2*rar ? pick(r, ABIL_KEYS) : null;
-  const pow = 1 + cost*2 + rar + Math.floor(r()*2) - (ab?1:0);
-  return { type, rar, emoji, noun, place, name:`${noun} (${place})`, cost, pow, ab };
+  const ab = r() < 0.3 + 0.05*rar ? pick(r, ABIL_KEYS) : null;
+  const bonus = rar>=2 ? (ab==='Guard' ? 'shield' : 'damage') : null;   // rare cards: +1 damage, or +1 shield on Guard cards
+  const pow = 2 + cost*2 + Math.floor(r()*2) - (ab?1:0) + (bonus==='damage' ? 1 : 0);
+  return { type, rar, emoji, noun, place, name:`${noun} (${place})`, cost, pow, ab, bonus };
 }
 
 /* =====================================================================
    STATE — single-player prototype keeps everything in this browser.
    Multiplayer: S.guardians + S.news move to the server (SQLite); the rest stays per-player.
    ===================================================================== */
-let S = { cards:[], deck:[], tired:{}, raids:{}, attune:{}, lastRegen:0, mana:null, artifact:null, warden:null, wells:{}, opened:{}, guardians:{}, lastTick:0, news:[], mode:'gps', nextId:1,
+let S = { cards:[], deck:[], tired:{}, raids:{}, attune:{}, honors:{}, rumorTaken:{}, rumorAnnounced:{}, rumorHeld:null, rumorForce:null, lastRegen:0, mana:null, artifact:null, warden:null, wells:{}, opened:{}, guardians:{}, lastTick:0, news:[], mode:'gps', nextId:1,
           seenHelp:false, siteOverrides:{}, editor:false, summoned:0, toppled:0, started:false };
 function load(){ try { const s = JSON.parse(localStorage.getItem(STORE_KEY)); if (s) S = Object.assign(S, s); } catch(e){}
   if (!S.mana || typeof S.mana!=='object'){ S.mana = { Colorless:0 }; TYPE_KEYS.forEach(t => S.mana[t] = 2); } }
@@ -526,16 +535,21 @@ function setPos(lat,lng){
 function wellReady(id){ return Date.now() - (S.wells[id]||0) >= KEEPER_RESPAWN_MIN*60000; }
 function renderSites(){
   siteLayer.clearLayers();
+  const rs = rumorState();
   for (const s of SITES){
     const g = S.guardians[s.id], col = g ? TYPES[g.type].color : (s.aff ? TYPES[s.aff].color : '#777');
     const raid = S.raids[s.id];
     const html = g
       ? `<div class="site ${g.owner==='you'?'mine':''} ${raid?'raid':''}" style="--tc:${col}">${raid?'<span class="swords">⚔️</span>':''}${gEmoji(g.type)}${g.owner==='you'?'<span class="crown">👑</span>':''}<span class="lv">${g.level}</span>${wellReady(s.id)?'<span class="drop">💧</span>':''}</div>`
       : `<div class="site empty" style="--tc:${col}">⛲${wellReady(s.id)?'<span class="drop">💧</span>':''}</div>`;
-    const m = L.marker([s.lat,s.lng], { icon:L.divIcon({ className:'', iconSize:[44,44], html }), zIndexOffset:200 }).addTo(siteLayer);
+    const bubbles = s.id==='bearlake' && rs ? '<span class="bubbles">🫧</span>' : '';
+    const m = L.marker([s.lat,s.lng], { icon:L.divIcon({ className:'', iconSize:[44,44], html: bubbles ? html.replace(/<\/div>$/, bubbles+'</div>') : html }), zIndexOffset:200 }).addTo(siteLayer);
     m.bindTooltip(esc(s.name), { permanent:true, direction:'bottom', offset:[0,22], className:'lmlabel' });
     m.on('click', () => openSite(s.id));
   }
+  if (rs==='surfaced'){ const sp = rumorSpot();
+    L.marker([sp.lat,sp.lng], { icon:L.divIcon({ className:'', iconSize:[52,52], html:'<div class="rumor">🫧</div>' }), zIndexOffset:900 })
+      .addTo(siteLayer).bindTooltip('???', { permanent:true, direction:'bottom', offset:[0,26], className:'lmlabel' }).on('click', claimRumor); }
   const live = currentWarden();
   L.marker([TOWER.lat,TOWER.lng], { icon:L.divIcon({ className:'', iconSize:[44,44],
     html:`<div class="site tower ${live?'live':''}" style="--tc:#e8e8e8">${live ? '🔔' : '🗼'}${S.artifact && S.artifact.holder==='you' ? '<span class="crown">✨</span>' : ''}</div>` }), zIndexOffset:300 })
@@ -554,7 +568,9 @@ function updateBanner(){
   if (!me){ b.textContent = S.mode==='gps' ? 'Finding you…' : 'Tap the map to place yourself'; return; }
   if (!inCampus(me.lat,me.lng)){ b.textContent = `You're ${fmtDist(distM(me.lat,me.lng,...CAMPUS.center))} from campus. Switch to 👆 test mode to explore.`; return; }
   const mine = guardianList().filter(x => x.g.owner==='you').length, packs = visiblePacks().length;
+  if (rumorState()==='surfaced'){ b.textContent = '🫧 Something has surfaced in Bear Lake!'; return; }
   if (currentWarden()){ b.textContent = '🔔 The Bell Warden is at Elliott Tower!'; return; }
+  if (S.rumorHeld){ b.textContent = `🫧 You hold the Rumor in the Lake: ${fmtMin(S.rumorHeld.until - Date.now())} left to use it`; return; }
   const nr = Object.keys(S.raids).map(id => ({ s:siteById(id), d:0 })).filter(x => x.s).map(x => (x.d = distToMe(x.s.lat,x.s.lng), x)).filter(x => x.d <= RAID_SEEN_M).sort((a,b) => a.d-b.d)[0];
   if (nr){ b.textContent = `⚔️ Raid at ${nr.s.name} (${fmtDist(nr.d)}). Tap it to join!`; return; }
   b.textContent = `${S.mode==='test' ? '👆 ' : ''}${packs} pack${packs===1?'':'s'} nearby · ${guardianList().length}/${MAX_GUARDIANS} guardians${mine ? ' · 👑 '+mine+' yours' : ''}`;
@@ -583,7 +599,7 @@ function tryPack(p){
 const keeperType = id => { const s = siteById(id); return s.aff || pick(rngFrom('commons|'+id+'|'+Math.floor(Date.now()/3600000)), TYPE_KEYS); };
 function keeperFor(id){ const t = keeperType(id), s = siteById(id), lvl = 1 + attuneLvl(t), c = makeCard(rngFrom('keeper|'+id+'|'+t), t, 1);
   return { type:t, keeper:true, level:lvl, maxHp:58+12*lvl, hp:58+12*lvl, emoji:c.emoji, name:`${c.noun}, Keeper of ${s.name}`,
-           flavor:`It guards the ${t} well at ${s.name}, and it doesn't share.` }; }
+           flavor: id==='bearlake' ? 'It guards the well at Bear Lake, and something older than the well.' : `It guards the ${t} well at ${s.name}, and it doesn't share.` }; }
 function fightKeeper(id){ const s = siteById(id);
   if (distToMe(s.lat,s.lng) > SITE_RANGE_M) return toast('Get closer to the well.');
   if (!wellReady(id)) return toast(`The keeper returns in ${fmtMin(KEEPER_RESPAWN_MIN*60000-(Date.now()-S.wells[id]))}.`);
@@ -604,6 +620,62 @@ function winKeeper(){
     <p class="dim">This keeper returns in ${KEEPER_RESPAWN_MIN} min. Your cards aren't tired, since you won.</p>
     <div class="row"><button class="primary" data-act="close">Back to map</button></div>`);
 }
+/* =====================================================================
+   THE RUMOR IN THE LAKE — one super card, ever. It surfaces at Bear Lake now and then,
+   goes to whoever reaches it first, and must be used within a day.
+   ===================================================================== */
+function rumorWindow(){
+  if (S.rumorForce && Date.now() < S.rumorForce.end) return S.rumorForce;
+  const ms = RUMOR_SLOT_DAYS*864e5, slot = Math.floor(Date.now()/ms), r = rngFrom('rumor|'+slot);
+  if (r() > RUMOR_CHANCE) return null;
+  const win = RUMOR_WINDOW_H*36e5, start = slot*ms + r()*(ms - win);
+  return { id:'r'+slot, start, end:start+win };
+}
+const rumorSpot = () => { const s = siteById('bearlake'); return { lat:s.lat - 0.00025, lng:s.lng + 0.0003 }; };
+function rumorState(){ // 'surfaced' | 'stirring' | null
+  if (S.rumorHeld) return null;                       // only one exists at a time
+  const w = rumorWindow(), now = Date.now(); if (!w || S.rumorTaken[w.id]) return null;
+  if (now >= w.start && now < w.end) return 'surfaced';
+  if (now >= w.start - RUMOR_STIR_MIN*60000 && now < w.start) return 'stirring';
+  return null;
+}
+function rumorCard(){ return { type:'Colorless', rar:3, mega:true, emoji:'🫧', noun:'The Rumor in the Lake', place:'Bear Lake', name:'The Rumor in the Lake', cost:0, pow:RUMOR_POW, ab:'Secret' }; }
+function claimRumor(){
+  const w = rumorWindow(), spot = rumorSpot();
+  if (rumorState()!=='surfaced') return toast('The water is still.');
+  const d = distToMe(spot.lat, spot.lng); if (d > RUMOR_RANGE_M) return toast(`Something stirs in Bear Lake, ${fmtDist(d)} away. Hurry!`);
+  S.rumorTaken[w.id] = 'you';
+  const card = Object.assign(rumorCard(), { uid:S.nextId++, origin:'Bear Lake', got:new Date().toLocaleDateString('en-CA') });
+  S.cards.push(card); S.rumorHeld = { uid:card.uid, until: Date.now() + RUMOR_HOLD_H*36e5 };
+  S.honors.ancientSecret = (S.honors.ancientSecret || []).concat(new Date().toLocaleDateString('en-CA'));
+  news('📣 CAMPUS-WIDE: An ancient secret has been recovered from Bear Lake. The Rumor in the Lake is in play.');
+  save(); renderSites(); renderPacks(); updateBanner();
+  openSheet(`<h2>🫧 You recovered an ancient secret</h2>
+    <div class="reveal">${cardHTML(card)}</div>
+    <p class="flavor" style="text-align:center">“${esc(LORE.rumor)}”</p>
+    <div class="box" style="border:2px solid #4fd1c5">🏅 <b>Badge earned: Recovered an Ancient Secret</b>
+      <div class="dim" style="font-size:12px">In the full program this badge appears on your Moodle and university portal profiles.</div></div>
+    <p>🌊 ${ABIL.Secret.text} It shows up in your hand at the start of any fight.</p>
+    <p><b>Use it within ${RUMOR_HOLD_H} hours</b>, or it slips back into the lake.</p>
+    <div class="row"><button class="primary" data-act="close">Hold it close</button></div>`, true);
+}
+function rumorTick(){
+  const now = Date.now(), w = rumorWindow();
+  if (S.rumorHeld && now > S.rumorHeld.until){ const uid = S.rumorHeld.uid;
+    S.cards = S.cards.filter(c => c.uid!==uid); S.deck = S.deck.filter(u => u!==uid); S.rumorHeld = null;
+    news('🌊 The Rumor in the Lake slipped back beneath the water, unused.'); toast('🌊 The Rumor slipped back into the lake.'); }
+  if (!w) return;
+  if (rumorState()==='surfaced' && !S.rumorAnnounced[w.id]){ S.rumorAnnounced[w.id] = 1;
+    news('📣 CAMPUS-WIDE: Something has surfaced in Bear Lake. It won\'t stay long.');
+    if (!(B && !B.over)) openSheet(`<h2>📣 Campus-wide message</h2><p style="font-size:17px">Something has surfaced in <b>Bear Lake</b>.</p>
+      <p class="flavor">The old stories were true. It won't stay long, and only one person can reach it first.</p>
+      <div class="row"><button data-act="close">Later</button><button class="primary" data-act="flyrumor">Show me</button></div>`); }
+  if (now >= w.end && !S.rumorTaken[w.id] && S.rumorAnnounced[w.id]){
+    if (Math.random() < 0.5){ const t = pick(Math.random, TYPE_KEYS); S.rumorTaken[w.id] = t;
+      news(`📣 CAMPUS-WIDE: A ${T(t).icon} ${t} student recovered the ancient secret from Bear Lake.`); }
+    else { S.rumorTaken[w.id] = 'lake'; news('🌊 Whatever surfaced in Bear Lake has sunk out of sight again.'); } }
+}
+
 function tend(id){
   const g = S.guardians[id], s = siteById(id);
   if (distToMe(s.lat,s.lng) > SITE_RANGE_M) return toast('Get closer to your guardian.');
@@ -617,9 +689,9 @@ function tend(id){
    CARD RENDERING
    ===================================================================== */
 function cardHTML(c, o={}){
-  const T = TYPES[c.type], extra = o.eff!=null ? o.eff - c.pow : 0;
-  return `<div class="card r${c.rar} ${o.cls||''}" style="--tc:${T.color}" ${o.attr||''}>
-    <div class="ctop"><span class="cost" style="background:${T.color}">${c.cost}</span><span>${T.icon} ${c.type}</span></div>
+  const T = TYPES[c.type] || NEUTRAL, extra = o.eff!=null ? o.eff - c.pow : 0;
+  return `<div class="card r${c.rar} ${c.mega?'mega':''} ${o.cls||''}" style="--tc:${T.color}" ${o.attr||''}>
+    <div class="ctop"><span class="cost" style="background:${T.color}">${c.cost}</span><span>${c.mega ? '◇ Ancient' : T.icon+' '+c.type}</span></div>
     <div class="art">${c.emoji}</div>
     <div class="cname">${esc(c.noun || c.name)}${c.place ? `<div style="font-weight:400;font-size:10px;color:var(--dim)">${esc(c.place)}</div>` : ''}</div>
     <div class="stats"><span>⚔️ ${o.eff!=null ? o.eff : c.pow}${extra>0 ? ` <span class="boost">(+${extra})</span>` : extra<0 ? ` <span class="dim">(${extra})</span>` : ''}</span><span style="color:var(--tc)">${'★'.repeat(c.rar+1)}</span></div>
@@ -695,7 +767,7 @@ const ROLES = {
   Support: { icon:'📣', types:['Lore','Muse'],  every:5500, text:'Jams the next strike or boosts your next card' },
 };
 let B = null, siegeLoop = null;
-function effPow(c){ const g = B.g; let p = c.pow + boostFor(c.type, B.site);
+function effPow(c){ if (c.mega) return c.pow; const g = B.g; let p = c.pow + boostFor(c.type, B.site);
   if (TYPES[c.type].beats===g.type) p += 2; if (T(g.type).beats===c.type) p -= 1; return Math.max(1,p); }
 const rollIntent = g => (g.keeper ? 2 + g.level : 3 + g.level*2) + Math.floor(Math.random()*3);
 const strikeMs = () => B.keeper ? (B.phase>=2 ? 8000 : 10000) : (B.phase>=2 ? STRIKE_MS_ENRAGED : STRIKE_MS);
@@ -727,6 +799,7 @@ function challenge(id, keeper){
         log:[`⚠️ If you lose, every card you played gets tired for ${TIRED_MIN} min, and each has a ${Math.round(BREAK_CHANCE*100)}% chance to break for good. Retreating only tires them.`,
              keeper ? `💧 The Well Keeper rises. This is a solo fight: no allies, no ward. Battle mana ⚡ builds every ${SURGE_MS/1000}s.` : raid ? `⚔️ You join the ${raid.atk} raid! Its ${party.length} raiders already broke the guardian's ward. Watch out: if one of them lands the final blow, ${raid.atk} rises.` : `⚔️ The siege begins! ${party.length} students answered the call: ${party.map(p => ROLES[p.role].icon+' '+p.role).join(', ')}. The guardian raised a ward of ${WARD_PER_ALLY*party.length} against the crowd.`] };
   for (let k=0;k<HAND_SIZE;k++) drawOne();
+  if (S.rumorHeld){ const rc = S.cards.find(c => c.uid===S.rumorHeld.uid); if (rc){ B.hand.push(Object.assign({}, rc)); blog('🫧 The Rumor in the Lake waits in your hand.'); } }
   renderBattle(true);
   clearInterval(siegeLoop); siegeLoop = setInterval(siegeTick, 200);
 }
@@ -806,7 +879,7 @@ function updateBattle(changed){
   const g = B.g, secs = Math.max(0, Math.ceil((B.nextStrike - Date.now())/1000)), top = alive().sort((x,y) => y.threat - x.threat)[0];
   const dmg = Math.max(0, B.intent + (B.phase>=2 ? 2 : 0) - B.disrupt);
   $('bStrike').innerHTML = `${B.phase===3 ? '☄️' : '🗡️'} Next strike in <b>${secs}s</b>: <b>${B.phase===3 ? Math.ceil(dmg*0.6)+' to everyone' : dmg+' at '+(top===B.me ? 'YOU' : top.emoji+' '+esc(top.name))}</b>
-    ${B.disrupt ? ` <span class="boost">(jammed −${B.disrupt})</span>` : ''}${B.phase===2 ? ' <span style="color:#ff9b5e">🔥 enraged</span>' : ''}
+    ${B.disrupt>=999 ? ' <span class="boost">(silenced)</span>' : B.disrupt ? ` <span class="boost">(jammed −${B.disrupt})</span>` : ''}${B.phase===2 ? ' <span style="color:#ff9b5e">🔥 enraged</span>' : ''}
     <div class="bar" style="margin-top:6px"><i style="width:${Math.min(100,100*secs*1000/strikeMs())}%;background:#ff9b5e"></i></div>`;
   if (!changed) return;
   $('bGuard').innerHTML = guardianPanel(B.site, g) + (B.wardMax ? `<div style="font-size:12px;margin-top:4px">🔰 Crowd ward ${B.ward}/${B.wardMax}<div class="bar" style="height:5px"><i style="width:${100*B.ward/B.wardMax}%;background:#9ecbff"></i></div></div>` : '');
@@ -821,14 +894,18 @@ function playCard(k){
   if (B.over) return; const c = B.hand[k]; if (!c) return;
   if (!canPay(c)) return toast(`Needs ${c.cost} ${c.type} mana (colorless ◇ can cover the gap).`);
   const usedC = pay(c.type, c.cost); B.spent += c.cost; B.played.add(c.uid);
-  const d = effPow(c) + B.rally; B.rally = 0; B.me.threat += d;
+  const d = effPow(c) + (c.mega ? 0 : B.rally); if (!c.mega) B.rally = 0; B.me.threat += d;
+  if (c.mega){ B.ward = 0; B.disrupt += 999; alive().forEach(p => p.resolve = p.max);
+    S.cards = S.cards.filter(x => x.uid!==c.uid); S.rumorHeld = null;
+    news(`📣 CAMPUS-WIDE: The Rumor in the Lake was unleashed at ${B.site.name}.`); }
   const soak = hitGuardian(d, B.me);
   let line = `${c.emoji} You play ${esc(c.name)}: ${d} damage${soak ? ` (${soak} into the ward)` : ''}${usedC ? ` (◇${usedC} colorless)` : ''}`;
-  if (TYPES[c.type].beats===B.g.type){ B.disrupt += 2; line += ', super effective (next strike −2)'; }
-  if (c.ab==='Guard'){ const b = Math.ceil(c.pow/2); B.me.block += b; B.me.threat += 15; line += `, 🛡️ +${b} block and you taunt`; }
+  if (c.mega) line = `🫧 <b>THE RUMOR IN THE LAKE</b> rises: ${d} damage, the ward shatters, the next strike is silenced, and everyone is restored!`;
+  if (!c.mega && TYPES[c.type].beats===B.g.type){ B.disrupt += 2; line += ', super effective (next strike −2)'; }
+  if (c.ab==='Guard'){ const b = Math.ceil(c.pow/2) + (c.bonus==='shield' ? 1 : 0); B.me.block += b; B.me.threat += 15; line += `, 🛡️ +${b} block and you taunt`; }
   if (c.ab==='Mend'){ const t = alive().sort((x,y) => x.resolve/x.max - y.resolve/y.max)[0]; const h = Math.min(3, t.max - t.resolve); t.resolve += h; line += `, 💚 heals ${t===B.me ? 'you' : t.name} ${h}`; }
   if (c.ab==='Rally'){ B.rally = 3; line += ', 📣 your next card +3'; }
-  B.hand.splice(k,1); B.discard.push(c); B.handDirty = true;
+  B.hand.splice(k,1); if (!c.mega) B.discard.push(c); B.handDirty = true;
   if (c.ab==='Swift'){ drawOne(); line += ', ⚡ drew a card'; }
   blog(line); save();
   if (B.g.hp<=0) return win(c);
@@ -918,8 +995,11 @@ function allegiance(){ const n = {}; TYPE_KEYS.forEach(t => n[t]=0);
   S.deck.forEach(u => { const c = S.cards.find(x => x.uid===u); if (c) n[c.type]++; }); return n; }
 function renderCards(){
   const el = document.getElementById('cardsPage'), al = allegiance(), top = TYPE_KEYS.reduce((a,b) => al[b]>al[a]?b:a);
-  const list = S.cards.filter(c => cardFilter==='All' || c.type===cardFilter).sort((a,b) => b.rar-a.rar || a.type.localeCompare(b.type) || b.pow-a.pow);
-  el.innerHTML = `<h2>Your deck · ${S.deck.length}/${DECK_MAX}</h2>
+  const list = S.cards.filter(c => !c.mega && (cardFilter==='All' || c.type===cardFilter)).sort((a,b) => b.rar-a.rar || a.type.localeCompare(b.type) || b.pow-a.pow);
+  const rc = S.rumorHeld && S.cards.find(c => c.uid===S.rumorHeld.uid), sec = (S.honors.ancientSecret||[]).length;
+  el.innerHTML = `${rc ? `<div class="box" style="border:2px solid #4fd1c5;display:flex;gap:10px;align-items:center"><div style="width:104px;flex:0 0 104px">${cardHTML(rc)}</div><div>🫧 <b>You hold the Rumor in the Lake.</b><br>It appears in your hand at the start of any fight. Use it within <b>${fmtMin(S.rumorHeld.until-Date.now())}</b>, or it returns to the lake.</div></div>` : ''}
+    ${sec ? `<div class="box">🏅 <b>Badges</b><br>Recovered an Ancient Secret ×${sec}<div class="dim" style="font-size:12px">In the full program, badges appear on your Moodle and portal profiles.</div></div>` : ''}
+    <h2>Your deck · ${S.deck.length}/${DECK_MAX}</h2>
     <p class="dim">${S.deck.length<DECK_MIN ? `⚠️ You need at least ${DECK_MIN} cards to challenge guardians.` : 'Tap a card to read it and add it to your deck or take it out.'}
       ${S.deck.some(u => tiredLeft(u)) ? `<br>😴 ${S.deck.filter(u => tiredLeft(u)).length} deck card(s) are tired and will sit out fights until they rest.` : ''}</p>
     <div class="box"><div class="allegiance">${TYPE_KEYS.map(t => `<span>${TYPES[t].icon} ${t}</span>
@@ -941,6 +1021,7 @@ function cardDetail(uid){
     ${l ? `<p class="flavor" style="text-align:center">“${esc(l.text)}”${l.link ? `<br><a href="${l.link}" target="_blank" rel="noopener" style="color:#8cc8ff;font-style:normal">Source →</a>` : ''}</p>` : ''}
     <p class="dim" style="text-align:center">${RARITY[c.rar]} ${c.type} · costs ${c.cost} ${c.type} mana · found in ${esc(c.origin||'?')}</p>
     ${c.ab ? `<p style="text-align:center">${ABIL[c.ab].icon} <b>${c.ab}</b>: ${ABIL[c.ab].text}</p>` : ''}
+    ${c.bonus ? `<p style="text-align:center">✨ <b>${RARITY[c.rar]} bonus:</b> +1 ${c.bonus}. Rare cards retire at the end of the season and become badges.</p>` : ''}
     <div class="row"><button data-act="close">Close</button><button class="primary" data-act="toggledeck" data-arg="${uid}">${inDeck ? 'Take out of deck' : 'Add to deck'}</button></div>`); }
 function autoDeck(){ // favor the faction you hold most of, then efficiency
   const n = {}; S.cards.forEach(c => n[c.type]=(n[c.type]||0)+1);
@@ -987,7 +1068,7 @@ function showHelp(){
     <p class="dim">🔒 Your coordinates stay on your device. In this prototype, rival students are computer-controlled.</p>
     <div class="box">🛠️ <b>Site editor</b> (for setting up the map): <button data-act="editor">${S.editor ? 'On, tap to turn off' : 'Off, tap to turn on'}</button>
       ${S.editor ? `<p class="dim" style="font-size:12px">Stand at a building (or tap there in test mode), open its site, and choose “Move this site to my position.” Then copy the list and send it to whoever maintains the code.</p>
-      <div class="row"><button data-act="copysites">📋 Copy site list</button></div><textarea id="siteDump" readonly>${esc(JSON.stringify([TOWER,...SITES].map(s => [s.id,s.name,+s.lat.toFixed(6),+s.lng.toFixed(6),s.aff])))}</textarea>` : ''}</div>
+      <div class="row"><button data-act="copysites">📋 Copy site list</button><button data-act="forcerumor">🫧 Surface the Rumor now (testing)</button></div><textarea id="siteDump" readonly>${esc(JSON.stringify([TOWER,...SITES].map(s => [s.id,s.name,+s.lat.toFixed(6),+s.lng.toFixed(6),s.aff])))}</textarea>` : ''}</div>
     <div class="row"><button data-act="reset">Reset game</button><button class="primary" data-act="close">Let's go</button></div>`);
   S.seenHelp = true; save();
 }
@@ -1024,7 +1105,9 @@ function openSheet(html, locked=false){ sheetLocked = locked; document.getElemen
 function closeSheet(){ sheetLocked = false; document.getElementById('modal').hidden = true; }
 document.getElementById('modal').addEventListener('click', e => { if (e.target.id==='modal' && !sheetLocked) closeSheet(); });
 const ACT = {
-  close: closeSheet, keeper: fightKeeper, tend, challenge: id => challenge(id), play: k => playCard(+k),
+  close: closeSheet, keeper: fightKeeper, rumor: claimRumor,
+  flyrumor: () => { closeSheet(); showTab('Map'); const sp = rumorSpot(); map.setView([sp.lat,sp.lng],18); },
+  forcerumor: () => { S.rumorForce = { id:'f'+Date.now(), start:Date.now(), end:Date.now()+RUMOR_WINDOW_H*36e5 }; save(); closeSheet(); heartbeat(); }, tend, challenge: id => challenge(id), play: k => playCard(+k),
   retreat: () => lose('You retreat.', true), summon, movesite: moveSite, copysites: copySites,
   editor: () => { S.editor = !S.editor; save(); showHelp(); }, reset: (a,btn) => resetGame(btn),
   autodeck: autoDeck, cleardeck: () => { S.deck = []; save(); renderCards(); },
@@ -1046,7 +1129,7 @@ document.getElementById('centerBtn').onclick = () => me ? map.setView([me.lat,me
 
 function heartbeat(){
   const before = JSON.stringify(S.guardians);
-  regenGuardians(); manaRegen(); processRaids(); if (!(B && !B.over)) rivalCatchUp(); prunePacks();
+  regenGuardians(); manaRegen(); processRaids(); rumorTick(); if (!(B && !B.over)) rivalCatchUp(); prunePacks();
   for (const u in S.tired) if (!tiredLeft(u)) delete S.tired[u];
   save(); renderSites();
   renderPacks(); updateBanner(); hud();
