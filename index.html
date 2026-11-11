@@ -152,37 +152,32 @@ const SRC = {
 };
 const LORE = {
   creatures: {
-    'Owl':            'Keeps library hours. Mostly the ones after midnight.',
-    'Bookworm':       'Ate a footnote once. It has been citing it ever since.',
-    'Footnote Snail': 'Slow, thorough, and always at the bottom of the page.',
-    'Stacks Bat':     'Finds its way through the stacks by echolocating call numbers.',
-    'Archive Cat':    'Guards special collections. Will not be photographed.',
-    'Bot':            'A motor-city descendant. Its grandparents had tailfins.',
-    'Circuit Crab':   'Walks sideways through every merge conflict.',
-    'Drone Bee':      'Pollinates the quad with Wi-Fi.',
-    'Servo':          'One arm, full torque, zero patience.',
-    'Debug Beetle':   'It is not the bug. It finds the bug.',
-    'Deer':           ['Michigan has named the white-tailed deer its state game mammal since 1997. A class of Zeeland fourth graders lobbied for it. Civic action works.', SRC.symbols],
-    'Turkey':         'Owns the sidewalk. Has always owned the sidewalk.',
-    'Squirrel':       'Has buried an acorn under every bench on campus. Remembers about half.',
-    'Duck':           'A Bear Lake regular. Accepts tribute, but please, no bread.',
-    'Pond Turtle':    ['The painted turtle became Michigan\'s state reptile in 1995, after fifth graders in Niles noticed the state didn\'t have one.', SRC.symbols],
-    'Raccoon':        'Knows the dining hall\'s trash schedule better than its own syllabus.',
-    'Bear':           'Hibernates through every 8 a.m. class.',
-    'Bison':          'Trains on the Upper Fields. The fields have stopped complaining.',
-    'Wolf':           'Runs in packs. Lifts in sets.',
-    'Rhino':          'Charges through finals week horn first.',
-    'Boar':           'Never skips leg day. Never skips any day.',
-    'Peacock':        'Every feather is a curtain call.',
-    'Songbird':       'Rehearses in Varner\'s stairwells for the acoustics.',
-    'Butterfly':      'Changed majors three times. Got more beautiful every time.',
-    'Octo-Bard':      'Plays eight instruments at once, all slightly out of tune.',
-    'Parrot':         'Repeats everything said in lecture. Understands about half, like everyone.',
+    'Midterm Monster':     'Shows up around week seven. Feeds on all-nighters.',
+    'Pop Quiz':            'It was in the syllabus. Nobody reads the syllabus.',
+    'Calculator':          'Asked to show its work. Refused.',
+    'Pothole Monster':     'Every freeze and thaw makes it a little bigger. Michigan winters are its gym.',
+    'Traffic Cone':        'Nobody has ever seen one being put out. They simply appear.',
+    'Construction Barrel': 'Michigan has two seasons: winter and construction.',
+    'Snowplow':            'Arrives exactly five minutes after you finish shoveling the end of the driveway.',
+    'Michigan Left':       'Why turn left when you can turn right, U-turn, and come back? It knows. It will not explain.',
+    'Deer':                ['Michigan has named the white-tailed deer its state game mammal since 1997. A class of Zeeland fourth graders lobbied for it. Civic action works.', SRC.symbols],
+    'Squirrel':            'Believes Squirrel Road was named in its honor. Collects tolls in acorns.',
+    'Apple Tree Monster':  'Wakes up every fall and demands that you go to a cider mill.',
+    'Canada Goose':        'Not Canadian. Not afraid of you. Not leaving.',
+    'Lake-Effect Cloud':   'Soaks up water over the Great Lakes, then empties it all onto your commute.',
+    'Grizzly':             'An OU Golden Grizzly through and through. Hibernates through every 8 a.m. class.',
+    'Golfer':              ['People have golfed on this land since John Dodge laid out a course on his estate in the early 1900s. This golfer has been looking for the same ball ever since.', 'https://oakland.edu/golf/history/'],
+    'Disc Golf Monster':   'Lurks in Grizzly Oaks. Has eaten more discs than it has ever thrown.',
+    'Tailgater':           'Fired up the grill at 6 a.m. for a 7 p.m. game. Regrets nothing.',
+    'Snow Day Shoveler':   'Checks the closings list at 5 a.m. Shovels anyway.',
+    'Stage Fright':        'Hides in the wings and waits for your first line.',
+    'Parking Attendant':   'Has waved ten thousand cars into the Meadow Brook Amphitheatre lots and never once smiled.',
+    'Theater Tech Crew':   'Dressed in black so you won\'t see them. You\'d notice the moment they were gone.',
   },
   guardians: {
-    Lore:      'Older than the library, and still upset about late fees.',
-    Gear:      'Assembled from the leftover parts of a hundred senior design projects.',
-    Wild:      'Walked these woods long before anyone cut the trails.',
+    Lore:      'Cumulative. Worth 40% of your grade. No notes allowed.',
+    Gear:      'Built from every orange barrel that ever closed a lane on Walton Boulevard.',
+    Wild:      'Rooted here long before the first building went up.',
     Might:     'Never loses. Sometimes takes a strategic nap.',
     Muse:      'Demands an encore. Always.',
     Colorless: 'Forty-nine bells, and one of them is always listening.',
@@ -270,17 +265,17 @@ const ATTUNE_HOURS = 2, ATTUNE_MAX = 3;                // each win: +1 attunemen
 const SURGE_MS = 4000, SURGE_MAX = 6;                  // in a siege: +1 battle mana every 4 s (pays for any card)
 const RAID_MIN = 4, RAID_MAX = 7, RAID_START_CHANCE = 0.6, RAID_SEEN_M = 500;
 const TIRED_MIN = 60, BREAK_CHANCE = 0.15, BREAK_CHANCE_RARE = 0.07;   // after a loss: played cards tire; some break
-const STORE_KEY = 'oucc3';
+const STORE_KEY = 'oucc4';
 
 /* =====================================================================
    FACTIONS (types) — each maps onto academic units / buildings
    ===================================================================== */
 const TYPES = {
-  Lore:  { color:'#6b7cff', icon:'📜', beats:'Gear',  units:'Humanities, education & the library',      guard:['🦉','Great Owl'] },
-  Gear:  { color:'#9aa0aa', icon:'⚙️', beats:'Wild',  units:'Engineering, computing & physical sciences', guard:['🤖','Colossus'] },
-  Wild:  { color:'#36b26a', icon:'🌿', beats:'Might', units:'Life sciences, health & the outdoors',       guard:['🦌','Elder Stag'] },
-  Might: { color:'#e0524c', icon:'💪', beats:'Muse',  units:'Athletics, business & recreation',          guard:['🐻','Great Bear'] },
-  Muse:  { color:'#c873e0', icon:'🎭', beats:'Lore',  units:'Arts, music, theatre & communication',      guard:['🦚','Peacock Sovereign'] },
+  Lore:  { color:'#6b7cff', icon:'📜', beats:'Gear',  units:'Humanities, education & the library',      guard:['📚','Final Exam'] },
+  Gear:  { color:'#9aa0aa', icon:'⚙️', beats:'Wild',  units:'Engineering, computing & physical sciences', guard:['🏗️','Orange Barrel Colossus'] },
+  Wild:  { color:'#36b26a', icon:'🌿', beats:'Might', units:'Life sciences, health & the outdoors',       guard:['🌳','Old Orchard'] },
+  Might: { color:'#e0524c', icon:'💪', beats:'Muse',  units:'Athletics, business & recreation',          guard:['🐻','Great Grizzly'] },
+  Muse:  { color:'#c873e0', icon:'🎭', beats:'Lore',  units:'Arts, music, theatre & communication',      guard:['🎤','Headliner'] },
 };
 const TYPE_KEYS = Object.keys(TYPES);
 const NEUTRAL = { color:'#e8e8e8', icon:'◇', beats:null, units:'No faction', guard:['🔔','Bell Warden'] };
@@ -288,18 +283,19 @@ const T = t => TYPES[t] || NEUTRAL;
 const MAX_GUARDIANS = TYPE_KEYS.length - 2;     // n − 2: always two factions without a guardian
 const WHEEL = '📜 Lore › ⚙️ Gear › 🌿 Wild › 💪 Might › 🎭 Muse › 📜 Lore';
 const CREATURES = {
-  Lore:  [['🦉','Owl'],['🐛','Bookworm'],['🐌','Footnote Snail'],['🦇','Stacks Bat'],['🐈‍⬛','Archive Cat']],
-  Gear:  [['🤖','Bot'],['🦀','Circuit Crab'],['🐝','Drone Bee'],['🦾','Servo'],['🐞','Debug Beetle']],
-  Wild:  [['🦌','Deer'],['🦃','Turkey'],['🐿️','Squirrel'],['🦆','Duck'],['🐢','Pond Turtle'],['🦝','Raccoon']],
-  Might: [['🐻','Bear'],['🦬','Bison'],['🐺','Wolf'],['🦏','Rhino'],['🐗','Boar']],
-  Muse:  [['🦚','Peacock'],['🐦','Songbird'],['🦋','Butterfly'],['🐙','Octo-Bard'],['🦜','Parrot']],
+  Lore:  [['👹','Midterm Monster'],['📝','Pop Quiz'],['🧮','Calculator']],
+  Gear:  [['🕳️','Pothole Monster'],['🚧','Traffic Cone'],['🛢️','Construction Barrel'],['🚜','Snowplow'],['↩️','Michigan Left']],
+  Wild:  [['🦌','Deer'],['🐿️','Squirrel'],['🍎','Apple Tree Monster'],['🪿','Canada Goose'],['🌨️','Lake-Effect Cloud']],
+  Might: [['🐻','Grizzly'],['🏌️','Golfer'],['🥏','Disc Golf Monster'],['🌭','Tailgater'],['⛄','Snow Day Shoveler']],
+  Muse:  [['😱','Stage Fright'],['🦺','Parking Attendant'],['🔦','Theater Tech Crew']],
 };
-const ADJ = {
-  Lore:  ['Overdue','Annotated','Peer-Reviewed','Citational','Hushed','Marginal'],
-  Gear:  ['Overclocked','Soldered','Recursive','Compiled','Rusty','Torqued'],
-  Wild:  ['Mossy','Feral','Dewy','Thorned','Wandering','Muddy'],
-  Might: ['Buff','Varsity','Iron','Sprinting','Stalwart','Hulking'],
-  Muse:  ['Encore','Dramatic','Lyric','Improv','Gilded','Offbeat'],
+// Where each card was found: real roads and places on and around OU's campus
+const PLACES = {
+  Lore:  ['Kresge Library','North Foundation Hall','Pawley Hall','Hannah Hall',"O'Dowd Hall"],
+  Gear:  ['Squirrel Road','Walton Boulevard','Adams Road','University Drive','Pioneer Drive','Meadow Brook Road'],
+  Wild:  ['Bear Lake','Grizzly Oaks','the Upper Fields','the Student Organic Farm','the Meadow Brook Greenhouse'],
+  Might: ['the Rec Center','the Upper Fields','Katke-Cousins Golf Course','Sharf Golf Course','Grizzly Oaks'],
+  Muse:  ['Varner Recital Hall','Meadow Brook Theatre','Wilson Hall','Vandenberg Hall','Meadow Brook Amphitheatre'],
 };
 const ABIL = {
   Guard: { icon:'🛡️', text:'Also gain block equal to half its power.' },
@@ -345,11 +341,11 @@ const pick = (r,arr) => arr[Math.floor(r()*arr.length)];
 function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function rollRarity(r){ const x=r(); return x<0.01?3 : x<0.08?2 : x<0.30?1 : 0; }
 function makeCard(r, type, rar){
-  const [emoji,noun] = pick(r, CREATURES[type]), adj = pick(r, ADJ[type]);
+  const [emoji,noun] = pick(r, CREATURES[type]), place = pick(r, PLACES[type]);
   const cost = 1 + Math.floor(r()*3);
   const ab = r() < 0.25 + 0.2*rar ? pick(r, ABIL_KEYS) : null;
   const pow = 1 + cost*2 + rar + Math.floor(r()*2) - (ab?1:0);
-  return { type, rar, emoji, name:adj+' '+noun, cost, pow, ab };
+  return { type, rar, emoji, noun, place, name:`${noun} (${place})`, cost, pow, ab };
 }
 
 /* =====================================================================
@@ -586,7 +582,7 @@ function tryPack(p){
 /* Well Keepers — a solo boss guards every site's well. Beat it for mana and attunement. */
 const keeperType = id => { const s = siteById(id); return s.aff || pick(rngFrom('commons|'+id+'|'+Math.floor(Date.now()/3600000)), TYPE_KEYS); };
 function keeperFor(id){ const t = keeperType(id), s = siteById(id), lvl = 1 + attuneLvl(t), c = makeCard(rngFrom('keeper|'+id+'|'+t), t, 1);
-  return { type:t, keeper:true, level:lvl, maxHp:58+12*lvl, hp:58+12*lvl, emoji:c.emoji, name:`${c.name}, Keeper of ${s.name}`,
+  return { type:t, keeper:true, level:lvl, maxHp:58+12*lvl, hp:58+12*lvl, emoji:c.emoji, name:`${c.noun}, Keeper of ${s.name}`,
            flavor:`It guards the ${t} well at ${s.name}, and it doesn't share.` }; }
 function fightKeeper(id){ const s = siteById(id);
   if (distToMe(s.lat,s.lng) > SITE_RANGE_M) return toast('Get closer to the well.');
@@ -625,11 +621,11 @@ function cardHTML(c, o={}){
   return `<div class="card r${c.rar} ${o.cls||''}" style="--tc:${T.color}" ${o.attr||''}>
     <div class="ctop"><span class="cost" style="background:${T.color}">${c.cost}</span><span>${T.icon} ${c.type}</span></div>
     <div class="art">${c.emoji}</div>
-    <div class="cname">${esc(c.name)}</div>
+    <div class="cname">${esc(c.noun || c.name)}${c.place ? `<div style="font-weight:400;font-size:10px;color:var(--dim)">${esc(c.place)}</div>` : ''}</div>
     <div class="stats"><span>⚔️ ${o.eff!=null ? o.eff : c.pow}${extra>0 ? ` <span class="boost">(+${extra})</span>` : extra<0 ? ` <span class="dim">(${extra})</span>` : ''}</span><span style="color:var(--tc)">${'★'.repeat(c.rar+1)}</span></div>
     <div class="ab">${c.ab ? ABIL[c.ab].icon+' '+c.ab : '—'}</div>${o.tired ? `<div class="zz">😴 tired ${fmtMin(o.tired)}</div>` : ''}</div>`;
 }
-function cardLore(c){ const k = Object.keys(LORE.creatures).sort((a,b) => b.length-a.length).find(k => c.name.endsWith(k));
+function cardLore(c){ const k = c.noun && LORE.creatures[c.noun] ? c.noun : Object.keys(LORE.creatures).sort((a,b) => b.length-a.length).find(k => c.name.includes(k));
   const v = k ? LORE.creatures[k] : null; return Array.isArray(v) ? { text:v[0], link:v[1] } : v ? { text:v } : null; }
 function plaqueHTML(id){ const p = LORE.sites[id]; if (!p) return '';
   return `<div class="plaque">🏛️ ${esc(p[0])}${p[1] ? ` <a href="${p[1]}" target="_blank" rel="noopener">Read more →</a>` : ''}</div>`; }
