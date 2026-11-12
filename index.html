@@ -157,6 +157,8 @@ const LORE = {
     'Midterm Monster':     'Shows up around week seven. Feeds on all-nighters.',
     'Pop Quiz':            'It was in the syllabus. Nobody reads the syllabus.',
     'Calculator':          'Asked to show its work. Refused.',
+    'Office Hours Ghost':  'Haunts an empty office every Tuesday from 2 to 4. Leaves the door open anyway.',
+    'Group Project':       'Four names on the title page. One person did the work. Everyone knows who.',
     'Pothole Monster':     'Every freeze and thaw makes it a little bigger. Michigan winters are its gym.',
     'Traffic Cone':        'Nobody has ever seen one being put out. They simply appear.',
     'Construction Barrel': 'Michigan has two seasons: winter and construction.',
@@ -166,7 +168,7 @@ const LORE = {
     'Squirrel':            'Believes Squirrel Road was named in its honor. Collects tolls in acorns.',
     'Apple Tree Monster':  'Wakes up every fall and demands that you go to a cider mill.',
     'Canada Goose':        'A silent sentry. It stands at the edge of Bear Lake from dawn to dusk, scanning the water for something.',
-    'Lake-Effect Cloud':   'Soaks up water over the Great Lakes and empties it onto your commute. It always slows down over Bear Lake, as if it\'s listening for something.',
+    'Lake-Effect Cloud':   'Soaks up water over the Great Lakes and dumps it on your commute. The fog it leaves behind always lingers longest over Bear Lake.',
     'Grizzly':             'An OU Golden Grizzly through and through. Hibernates through every 8 a.m. class.',
     'Golfer':              ['People have golfed on this land since John Dodge laid out a course on his estate in the early 1900s. This golfer has been looking for the same ball ever since.', 'https://oakland.edu/golf/history/'],
     'Disc Golf Monster':   'Lurks in Grizzly Oaks. Has eaten more discs than it has ever thrown.',
@@ -175,6 +177,8 @@ const LORE = {
     'Stage Fright':        'Hides in the wings and waits for your first line.',
     'Parking Attendant':   'Has waved ten thousand cars into the Meadow Brook Amphitheatre lots and never once smiled.',
     'Theater Tech Crew':   'Dressed in black so you won\'t see them. You\'d notice the moment they were gone.',
+    'Open Mic Night':      'Signed up as a joke. Brought the house down.',
+    'Understudy':          'Knows every line of every role. Still waiting for someone to twist an ankle.',
   },
   rumor: 'Every class has heard it from someone who heard it from someone. It was true.',
   guardians: {
@@ -289,11 +293,11 @@ const T = t => TYPES[t] || NEUTRAL;
 const MAX_GUARDIANS = TYPE_KEYS.length - 2;     // n − 2: always two factions without a guardian
 const WHEEL = '📜 Lore › ⚙️ Gear › 🌿 Wild › 💪 Might › 🎭 Muse › 📜 Lore';
 const CREATURES = {
-  Lore:  [['👹','Midterm Monster'],['📝','Pop Quiz'],['🧮','Calculator']],
+  Lore:  [['👹','Midterm Monster'],['📝','Pop Quiz'],['🧮','Calculator'],['👻','Office Hours Ghost'],['🧑‍🤝‍🧑','Group Project']],
   Gear:  [['🕳️','Pothole Monster'],['🚧','Traffic Cone'],['🛢️','Construction Barrel'],['🚜','Snowplow'],['↩️','Michigan Left']],
   Wild:  [['🦌','Deer'],['🐿️','Squirrel'],['🍎','Apple Tree Monster'],['🪿','Canada Goose'],['🌨️','Lake-Effect Cloud']],
   Might: [['🐻','Grizzly'],['🏌️','Golfer'],['🥏','Disc Golf Monster'],['🌭','Tailgater'],['⛄','Snow Day Shoveler']],
-  Muse:  [['😱','Stage Fright'],['🦺','Parking Attendant'],['🔦','Theater Tech Crew']],
+  Muse:  [['😱','Stage Fright'],['🦺','Parking Attendant'],['🔦','Theater Tech Crew'],['🎙️','Open Mic Night'],['👥','Understudy']],
 };
 // Where each card was found: real roads and places on and around OU's campus
 const PLACES = {
