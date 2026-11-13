@@ -378,7 +378,7 @@ function pay(type, cost){ let left = cost; const a = Math.min(S.mana[type], left
 function manaRegen(){ const step = MANA_REGEN_MIN*60000; if (!S.lastRegen) S.lastRegen = Date.now();
   const n = Math.min(MANA_REGEN_CAP, Math.floor((Date.now()-S.lastRegen)/step)); if (n<=0) return;
   S.lastRegen += Math.floor((Date.now()-S.lastRegen)/step)*step;
-  TYPE_KEYS.forEach(t => { const l = attuneLvl(t), cap = MANA_REGEN_CAP + 3*l;
+  TYPE_KEYS.forEach(t => { const l = attuneLvl(t), cap = Math.min(MANA_MAX, MANA_REGEN_CAP + 3*l);
     if (S.mana[t] < cap) S.mana[t] = Math.min(cap, S.mana[t] + n*(1+l)); }); }
 const attuneLvl = t => { const a = S.attune && S.attune[t]; return a && a.until > Date.now() ? a.lvl : 0; };
 function save(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch(e){} hud(); }
