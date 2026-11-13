@@ -2,7 +2,7 @@
 """Build card art for the game.
 
 Put source images in art/source/ named by card id (e.g. gear-construction-barrel.png,
-gear-construction-barrel.legendary.png) and add one row per image to art/credits.csv.
+gear-construction-barrel.legendary.png, guardian-gear.lv3.png) and add one row per image to art/credits.csv.
 Run:  python3 tools/build_art.py
 It checks each image, makes 512 px and 256 px WebP versions in art/cards/,
 and writes art/manifest.json, which the game reads on load.
@@ -13,7 +13,7 @@ from PIL import Image
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC, OUT = ROOT / 'art' / 'source', ROOT / 'art' / 'cards'
 MIN_SIZE, SIZES = 1024, (512, 256)
-ID_RE = re.compile(r'^(lore|gear|wild|might|muse|guardian|keeper)-[a-z0-9-]+(\.legendary)?$')
+ID_RE = re.compile(r'^(lore|gear|wild|might|muse|guardian|keeper)-[a-z0-9-]+(\.legendary|\.lv[2-4])?$')
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)

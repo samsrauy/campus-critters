@@ -66,7 +66,7 @@
   .btn.ghost { background:transparent; color:var(--dim); border:1px solid var(--line); padding:6px 12px; font-size:13px; }
   .btn:disabled { opacity:.45; cursor:not-allowed; }
   .cols > div:last-child { position:sticky; top:70px; }
-  .previews { display:flex; gap:22px; align-items:flex-end; flex-wrap:wrap; }
+  .previews { display:flex; gap:30px; padding:10px; align-items:flex-end; flex-wrap:wrap; }
   .previews figure { margin:0; text-align:center; }
   .previews figcaption { font-size:12px; color:var(--dim); margin-top:6px; }
   /* card face: same as the game */
@@ -83,10 +83,31 @@
   .card.big { width:190px; padding:9px; border-radius:16px; }
   .card.big .ctop { font-size:13px; } .card.big .cname { font-size:17px; } .card.big .cname small { font-size:13px; } .card.big .stats { font-size:15px; }
   .card.legend { box-shadow:0 0 13px 3px #ff5fd2; }
-  .boss { width:150px; height:150px; border-radius:30px; border:4px solid var(--tc); overflow:hidden; display:grid; place-items:center; font-size:96px; background:#000; }
-  .mapdot { width:44px; height:44px; border-radius:12px; border:3px solid var(--tc); overflow:hidden; display:grid; place-items:center; font-size:22px; background:#000; margin:0 auto; }
+  .seg { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
+  .seg .lab { width:100%; font-size:13px; color:var(--dim); }
+  .seg button { flex:1; min-width:80px; border:1px solid var(--line); background:#17171c; color:var(--ink); border-radius:9px; padding:7px 8px; cursor:pointer; font-size:13px; }
+  .seg button.on { border-color:var(--gold); background:#2c2614; color:var(--gold); font-weight:700; }
+  .seg button i { font-style:normal; color:var(--ok); margin-left:4px; }
+  .seg .hint { width:100%; font-size:12px; color:var(--dim); }
+  /* level tiers, same as the game */
+  .mapdot, .boss { position:relative; overflow:visible; }
+  .mapdot img, .boss img { border-radius:inherit; }
+  .tier2::before, .tier3::before, .tier4::before { content:''; position:absolute; inset:-7px; border-radius:inherit; pointer-events:none; }
+  .boss.tier2::before, .boss.tier3::before, .boss.tier4::before { inset:-10px; border-radius:38px; }
+  .mapdot.tier2::before, .mapdot.tier3::before, .mapdot.tier4::before { border-radius:16px; }
+  .mapdot.round::before { border-radius:50% !important; }
+  .tier2::before { border:2px solid #cfd6e6; }
+  .tier3::before { border:3px solid #f2c14e; box-shadow:0 0 12px 3px rgba(242,193,78,.55); }
+  .tier4::before { border:3px solid #ff5fd2; box-shadow:0 0 14px 4px rgba(255,95,210,.55); animation:holo 3s linear infinite; }
+  .tier3::after, .tier4::after { content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none; mix-blend-mode:screen; background-size:300% 100%; animation:sheen 3.2s linear infinite; }
+  .tier3::after { background-image:linear-gradient(115deg,transparent 38%,rgba(255,236,170,.55) 50%,transparent 62%); }
+  .tier4::after { background-image:linear-gradient(115deg,transparent 30%,rgba(255,120,220,.45) 42%,rgba(120,230,255,.45) 52%,rgba(190,255,140,.4) 60%,transparent 70%); }
+  @keyframes sheen { from { background-position:150% 0; } to { background-position:-150% 0; } }
+  @keyframes holo { to { filter:hue-rotate(360deg); } }
+  .boss { width:150px; height:150px; border-radius:30px; border:4px solid var(--tc); display:grid; place-items:center; font-size:96px; background:#000; }
+  .mapdot { width:44px; height:44px; border-radius:12px; border:3px solid var(--tc); display:grid; place-items:center; font-size:22px; background:#000; margin:0 auto; }
   .mapdot.round { border-radius:50%; }
-  .mapdot img { width:100%; height:100%; object-fit:cover; }
+  .mapdot img, .boss img { width:100%; height:100%; object-fit:cover; display:block; }
   .boss img { width:100%; height:100%; object-fit:cover; }
   .current { font-size:13px; color:var(--dim); margin-top:14px; }
   .current b { color:var(--ink); }
@@ -128,14 +149,29 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let DATA = null, SEL = null, FILTER = 'all';
-const ed = { img:null, name:'', scale:1, min:1, ox:0, oy:0, legendary:false };
+const ed = { img:null, name:'', scale:1, min:1, ox:0, oy:0, variant:'' };
 const VIEW = 600, OUT = 1024, MIN_SRC = 1024;
 
 async function loadCatalog() {
   const r = await fetch('/api/catalog'); DATA = await r.json(); renderList(); renderProgress();
 }
 const allItems = () => DATA.factions.flatMap(f => [...f.cards, ...f.bosses].map(c => ({ ...c, fac:f })));
-const artOf = (id, leg) => DATA.art[leg ? id + '.legendary' : id];
+const artOf = (id, v) => DATA.art[v ? id + '.' + v : id];
+const lvOf = v => v && v.startsWith('lv') ? +v.slice(2) : 1;
+// which versions each kind can have: [variant, label, hint]
+function variantsOf(c) {
+  if (c.kind === 'card') return [['', 'Regular'], ['legendary', 'Legendary']];
+  if (c.fac.key === 'Neutral') return [];
+  const n = c.kind === 'keeper' ? 4 : 3;
+  return Array.from({ length:n }, (_, i) => [i ? 'lv' + (i + 1) : '', 'Level ' + (i + 1)]);
+}
+// what the game shows at a level: the best variant at or below it, else the base art
+function shownArt(c, v) {
+  if (c.kind === 'card') return artOf(c.id, v) || artOf(c.id);
+  for (let l = lvOf(v); l >= 2; l--) { const a = artOf(c.id, 'lv' + l); if (a) return a; }
+  return artOf(c.id);
+}
+const tierCls = l => l >= 2 ? ' tier' + Math.min(4, l) : '';
 
 function renderProgress() {
   const cards = DATA.factions.flatMap(f => f.cards), done = cards.filter(c => artOf(c.id)).length;
@@ -146,7 +182,7 @@ function renderProgress() {
 function renderList() {
   const q = $('#q').value.trim().toLowerCase();
   $('#list').innerHTML = DATA.factions.map(f => {
-    const rows = [...f.cards, ...f.bosses].filter(c => {
+    const rows = [...f.cards, ...f.bosses].map(c => ({ ...c, fac:f })).filter(c => {
       const has = !!artOf(c.id), boss = c.kind !== 'card';
       if (q && !c.name.toLowerCase().includes(q)) return false;
       if (FILTER === 'need') return !has && !boss;
@@ -159,7 +195,7 @@ function renderList() {
       rows.map(c => { const a = artOf(c.id);
         return `<button class="item ${SEL && SEL.id === c.id ? 'sel' : ''}" data-id="${c.id}">
           <span class="thumb">${a ? `<img src="/${a.small}" alt="">` : c.emoji}</span>
-          <span class="nm">${esc(c.name)}${c.kind !== 'card' ? `<small>${c.kind === 'guardian' ? 'Guardian' : 'Well Keeper'}</small>` : ''}</span>
+          <span class="nm">${esc(c.name)}${c.kind !== 'card' ? `<small>${c.kind === 'guardian' ? 'Guardian' : 'Well Keeper'}${variantsOf(c).length ? ` · ${variantsOf(c).filter(([v]) => artOf(c.id, v)).length} of ${variantsOf(c).length} levels` : ''}</small>` : ''}</span>
           <span class="dot ${a ? 'has' : ''}" title="${a ? 'Has art' : 'Needs art'}"></span></button>`; }).join('') + '</div>';
   }).join('') || '<p class="dim" style="color:var(--dim)">Nothing matches.</p>';
 }
@@ -172,38 +208,48 @@ document.querySelector('.filters').addEventListener('click', e => {
 });
 
 function select(id) {
-  SEL = allItems().find(c => c.id === id); ed.img = null; ed.legendary = false;
+  SEL = allItems().find(c => c.id === id); ed.img = null; ed.variant = '';
   renderList(); renderMain();
 }
 
 function cardFace(c, src, big) {
   const place = c.kind === 'card' ? c.fac.place : (c.kind === 'guardian' ? 'Guardian' : 'Well Keeper');
-  return `<div class="card ${big ? 'big' : ''} ${ed.legendary ? 'legend' : ''}" style="--tc:${c.fac.color}">
+  return `<div class="card ${big ? 'big' : ''} ${ed.variant === 'legendary' ? 'legend' : ''}" style="--tc:${c.fac.color}">
     <div class="ctop"><span class="cost">2</span><span>${c.fac.icon} ${c.fac.key}</span></div>
     <div class="art ${src ? 'img' : ''}">${src ? `<img src="${src}" alt="">` : c.emoji}</div>
     <div class="cname">${esc(c.name)}<small>${esc(place)}</small></div>
-    <div class="stats"><span>⚔️ 6</span><span>${ed.legendary ? '★★★' : '★'}</span></div></div>`;
+    <div class="stats"><span>⚔️ 6</span><span>${ed.variant === 'legendary' ? '★★★' : '★'}</span></div></div>`;
 }
-function bossFace(c, src) {
-  return `<div class="boss" style="--tc:${c.fac.color}">${src ? `<img src="${src}" alt="">` : c.emoji}</div>`;
+function bossFace(c, src, lv) {
+  return `<div class="boss${tierCls(lv)}" style="--tc:${c.fac.color}">${src ? `<img src="${src}" alt="">` : c.emoji}</div>`;
 }
-function mapFace(c, src) {
+function mapFace(c, src, lv) {
   const round = c.fac.key === 'Neutral';
-  return `<div class="mapdot ${round ? 'round' : ''}" style="--tc:${c.fac.color}">${src ? `<img src="${src}" alt="">` : c.emoji}</div>`;
+  return `<div class="mapdot ${round ? 'round' : ''}${tierCls(lv)}" style="--tc:${c.fac.color}">${src ? `<img src="${src}" alt="">` : c.emoji}</div>`;
+}
+
+function currentNote(c, cur) {
+  if (cur) return `Current art by <b>${esc(cur.artist)}</b>. Saving will replace it.`;
+  const shown = shownArt(c, ed.variant);
+  if (!ed.variant || !shown) return 'No art yet. The game shows the emoji until someone adds a picture.';
+  const which = c.kind === 'card' ? 'the regular picture' : `the ${shown === artOf(c.id) ? 'Level 1' : 'closest lower-level'} picture`;
+  return `No art for this version yet. Until there is, the game uses ${which}, shown in the preview.`;
 }
 
 function renderMain() {
   const c = SEL, isCard = c.kind === 'card';
-  const cur = artOf(c.id, ed.legendary), credit = DATA.credits[ed.legendary ? c.id + '.legendary' : c.id];
+  const cur = artOf(c.id, ed.variant), credit = DATA.credits[ed.variant ? c.id + '.' + ed.variant : c.id], vars = variantsOf(c);
   $('#main').innerHTML = `
     <div class="title" style="--tc:${c.fac.color}"><h2>${c.emoji} ${esc(c.name)}</h2>
       <span class="tag">${c.fac.icon} ${c.fac.key} ${isCard ? 'card' : c.kind === 'guardian' ? 'guardian' : 'Well Keeper'}</span></div>
-    ${!isCard ? `<div class="note good" style="margin-bottom:14px">${c.kind === 'keeper' ? `Every ${c.fac.key} Well Keeper on campus uses this picture.` : c.fac.key === 'Neutral' ? 'The Bell Warden appears at Elliott Tower.' : `This is the ${c.fac.key} guardian wherever it stands on campus.`} It shows on the map and in fights.</div>` : ''}
+    ${!isCard ? `<div class="note good" style="margin-bottom:14px">${c.kind === 'keeper' ? `Every ${c.fac.key} Well Keeper on campus uses this picture.` : c.fac.key === 'Neutral' ? 'The Bell Warden appears at Elliott Tower.' : `This is the ${c.fac.key} guardian wherever it stands on campus.`} ${c.kind === 'keeper' ? 'It shows in the site sheet and in keeper fights.' : 'It shows on the map and in fights.'}</div>` : ''}
     <div class="cols">
       <div>
         <div class="step"><h4><b>1</b>Your picture</h4>
           <div class="drop" id="drop" tabindex="0" role="button"><strong>Drop a picture here</strong><br>or click to choose one<br><small>PNG or JPG, at least 1024 × 1024 pixels</small></div>
-          ${isCard ? `<label class="check"><input type="checkbox" id="leg" ${ed.legendary ? 'checked' : ''}><span>This is the <b>legendary</b> version (a special picture for the rarest copy of this card)</span></label>` : ''}
+          ${vars.length ? `<div class="seg" id="seg"><span class="lab">Which version is this?</span>${vars.map(([v, label]) =>
+            `<button data-v="${v}" class="${ed.variant === v ? 'on' : ''}">${label}${artOf(c.id, v) ? '<i>●</i>' : ''}</button>`).join('')}
+            <span class="hint">${isCard ? 'Legendary is optional: a special picture for the rarest copy of this card.' : 'Level 1 is the main picture. Higher levels are optional; the game shows the stronger version as the boss levels up, with a fancier frame at each level.'}</span></div>` : ''}
         </div>
         <div class="step" id="cropStep" hidden><h4><b>2</b>Crop it</h4>
           <div class="stage" id="stage"><canvas id="cv" width="${VIEW}" height="${VIEW}"></canvas><div class="guide"><span>Keep the main subject inside this box</span></div></div>
@@ -225,7 +271,7 @@ function renderMain() {
       <div>
         <div class="step"><h4>Preview</h4>
           <div class="previews" id="prev"></div>
-          <div class="current">${cur ? `Current art by <b>${esc(cur.artist)}</b>. Saving will replace it.` : 'No art yet. The game shows the emoji until someone adds a picture.'}</div>
+          <div class="current">${currentNote(c, cur)}</div>
         </div>
         <details><summary>Art guidelines</summary><ul>
           <li>Square, at least 1024 × 1024 pixels. Bigger is fine; the studio shrinks it.</li>
@@ -243,7 +289,7 @@ function renderMain() {
   drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
   drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) loadFile(f); };
-  const leg = $('#leg'); if (leg) leg.onchange = () => { ed.legendary = leg.checked; const keep = ed.img; renderMain(); if (keep) { ed.img = keep; showEditor(true); } };
+  const seg = $('#seg'); if (seg) seg.onclick = e => { const b = e.target.closest('button'); if (!b) return; ed.variant = b.dataset.v; const keep = ed.img; renderMain(); if (keep) { ed.img = keep; showEditor(true); } };
   updatePreview();
 }
 
@@ -306,11 +352,11 @@ function draw() {
   clearTimeout(prevTimer); prevTimer = setTimeout(updatePreview, 60);
 }
 function updatePreview() {
-  const c = SEL, cur = artOf(c.id, ed.legendary);
+  const c = SEL, cur = shownArt(c, ed.variant), lv = c.fac.key === 'Neutral' ? 2 : lvOf(ed.variant);
   const src = ed.img ? render(256).toDataURL('image/png') : (cur ? '/' + cur.small : null);
   $('#prev').innerHTML = c.kind === 'card'
     ? `<figure>${cardFace(c, src, false)}<figcaption>In your collection</figcaption></figure><figure>${cardFace(c, src, true)}<figcaption>Card details</figcaption></figure>`
-    : `${c.kind !== 'keeper' ? `<figure>${mapFace(c, src)}<figcaption>On the map</figcaption></figure>` : ''}<figure>${bossFace(c, src)}<figcaption>In a fight</figcaption></figure>`;
+    : `${c.kind !== 'keeper' ? `<figure>${mapFace(c, src, lv)}<figcaption>On the map${lv > 1 ? ` · Lv ${lv}` : ''}</figcaption></figure>` : ''}<figure>${bossFace(c, src, lv)}<figcaption>In a fight${lv > 1 ? ` · Lv ${lv}` : ''}</figcaption></figure>`;
 }
 
 function validate() {
@@ -321,14 +367,14 @@ function validate() {
 async function save() {
   const btn = $('#save'); btn.disabled = true; btn.textContent = 'Saving…';
   localStorage.setItem('artist', $('#artist').value.trim());
-  const body = { id:SEL.id, legendary:ed.legendary, artist:$('#artist').value.trim(), alt:$('#alt').value.trim(),
+  const body = { id:SEL.id, variant:ed.variant, artist:$('#artist').value.trim(), alt:$('#alt').value.trim(),
     agreement:$('#agree').checked, png:render(OUT).toDataURL('image/png') };
   let out;
   try { const r = await fetch('/api/save', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) }); out = await r.json(); }
   catch (e) { out = { error:'Could not reach the studio. Is the studio window still open?' }; }
   btn.textContent = 'Save to the game';
   if (out.ok) {
-    const keepLeg = ed.legendary; await loadCatalog(); SEL = allItems().find(c => c.id === SEL.id); ed.img = null; ed.legendary = keepLeg; renderMain();
+    const keepV = ed.variant; await loadCatalog(); SEL = allItems().find(c => c.id === SEL.id); ed.img = null; ed.variant = keepV; renderMain();
     toast(`Saved! ${SEL.name} now has your art.`);
   } else {
     btn.disabled = false;
@@ -337,7 +383,7 @@ async function save() {
 }
 
 function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 3200); }
-loadCatalog().catch(() => { $('#main').innerHTML = '<div class="empty"><h2>The studio can\'t find the game files.</h2><p>Start it from the campus-critters folder with <code>python3 tools/art_studio.py</code>.</p></div>'; });
+loadCatalog().catch(e => { console.error(e); $('#main').innerHTML = '<div class="empty"><h2>The studio can\'t find the game files.</h2><p>Start it from the campus-critters folder with <code>python3 tools/art_studio.py</code>.</p></div>'; });
 </script>
 </body>
 </html>

@@ -17,7 +17,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 TOOLS, ART = ROOT / 'tools', ROOT / 'art'
 CREDITS = ART / 'credits.csv'
 FIELDS = ['id', 'artist', 'alt', 'agreement_on_file']
-ID_RE = re.compile(r'^(lore|gear|wild|might|muse|guardian|keeper)-[a-z0-9-]+(\.legendary)?$')
+ID_RE = re.compile(r'^(lore|gear|wild|might|muse|guardian|keeper)-[a-z0-9-]+(\.legendary|\.lv[2-4])?$')
 MAX_UPLOAD = 30 * 1024 * 1024
 LOCK = threading.Lock()
 
@@ -78,8 +78,14 @@ def manifest():
 def save_art(data):
     from PIL import Image
     art_id = str(data.get('id', '')).strip()
-    if data.get('legendary'):
-        art_id += '.legendary'
+    variant = 'legendary' if data.get('legendary') else str(data.get('variant') or '')
+    allowed = {'guardian': {'lv2', 'lv3'}, 'keeper': {'lv2', 'lv3', 'lv4'}}.get(art_id.split('-')[0], {'legendary'})
+    if art_id == 'guardian-bell-warden':
+        allowed = set()
+    if variant:
+        if variant not in allowed:
+            return 400, {'error': 'That version is not one this card or boss can have.'}
+        art_id += '.' + variant
     artist, alt = str(data.get('artist', '')).strip(), str(data.get('alt', '')).strip()
     if not ID_RE.match(art_id):
         return 400, {'error': 'That card id is not one the game knows.'}
