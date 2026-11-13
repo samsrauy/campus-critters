@@ -38,6 +38,8 @@
   .card .ctop { display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--tc); font-weight:700; }
   .card .cost { background:var(--mana); color:#001; border-radius:10px; padding:1px 6px; font-size:12px; }
   .card .art { font-size:40px; text-align:center; line-height:1.25; background:color-mix(in srgb,var(--tc) 18%,transparent); border-radius:8px; }
+  .card .art.img { padding:0; overflow:hidden; line-height:0; }
+  .card .art.img img { width:100%; aspect-ratio:1; object-fit:cover; display:block; border-radius:8px; }
   .card .cname { font-size:12px; font-weight:700; line-height:1.15; min-height:28px; }
   .card .stats { display:flex; justify-content:space-between; font-size:12px; }
   .card .boost { color:#7dff9a; }
@@ -276,6 +278,15 @@ const RUMOR_CYCLE_DAYS = 56, RUMOR_CHANCE = 0.85, RUMOR_SIGHT_MIN_D = 14, RUMOR_
       RUMOR_HOLD_H = 24, RUMOR_POW = 30, RUMOR_RIVAL_PER_WEEK = 1;
 const TIRED_MIN = 60, BREAK_CHANCE = 0.15, BREAK_CHANCE_RARE = 0.07;   // after a loss: played cards tire; some break
 const STORE_KEY = 'oucc4';
+/* CARD ART — filled from art/manifest.json (built by tools/build_art.py). Cards without art keep their emoji. */
+const ART = {};
+const ART_INLINE = null;   // the self-contained preview build puts its art here
+async function loadArt(){
+  if (ART_INLINE) return Object.assign(ART, ART_INLINE);
+  try { const r = await fetch('art/manifest.json', { cache:'no-cache' }); if (r.ok) Object.assign(ART, await r.json()); } catch(e){}
+}
+const cardId = c => (c.type + '-' + (c.noun || c.name)).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const artFor = c => (c.rar===3 && ART[cardId(c)+'.legendary']) || ART[cardId(c)] || null;
 
 /* =====================================================================
    FACTIONS (types) — each maps onto academic units / buildings
@@ -688,7 +699,7 @@ function cardHTML(c, o={}){
   const T = TYPES[c.type] || NEUTRAL, extra = o.eff!=null ? o.eff - c.pow : 0;
   return `<div class="card r${c.rar} ${c.mega?'mega':''} ${o.cls||''}" style="--tc:${T.color}" ${o.attr||''}>
     <div class="ctop"><span class="cost" style="background:${T.color}">${c.cost}</span><span>${c.mega ? '◇ Ancient' : T.icon+' '+c.type}</span></div>
-    <div class="art">${c.emoji}</div>
+    ${(a => a ? `<div class="art img"><img src="${a.small}" alt="${esc(a.alt)}" loading="lazy"></div>` : `<div class="art">${c.emoji}</div>`)(artFor(c))}
     <div class="cname">${esc(c.noun || c.name)}${c.place ? `<div style="font-weight:400;font-size:10px;color:var(--dim)">${esc(c.place)}</div>` : ''}</div>
     <div class="stats"><span>⚔️ ${o.eff!=null ? o.eff : c.pow}${extra>0 ? ` <span class="boost">(+${extra})</span>` : extra<0 ? ` <span class="dim">(${extra})</span>` : ''}</span><span style="color:var(--tc)">${'★'.repeat(c.rar+1)}</span></div>
     <div class="ab">${c.ab ? ABIL[c.ab].icon+' '+c.ab : '—'}</div>${o.tired ? `<div class="zz">😴 tired ${fmtMin(o.tired)}</div>` : ''}</div>`;
@@ -1017,6 +1028,7 @@ function cardDetail(uid){
     ${l ? `<p class="flavor" style="text-align:center">“${esc(l.text)}”${l.link ? `<br><a href="${l.link}" target="_blank" rel="noopener" style="color:#8cc8ff;font-style:normal">Source →</a>` : ''}</p>` : ''}
     <p class="dim" style="text-align:center">${RARITY[c.rar]} ${c.type} · costs ${c.cost} ${c.type} mana · found in ${esc(c.origin||'?')}</p>
     ${c.ab ? `<p style="text-align:center">${ABIL[c.ab].icon} <b>${c.ab}</b>: ${ABIL[c.ab].text}</p>` : ''}
+    ${(a => a ? `<p class="dim" style="text-align:center">🎨 Art: <b>${esc(a.artist)}</b></p>` : '')(artFor(c))}
     ${c.bonus ? `<p style="text-align:center">✨ <b>${RARITY[c.rar]} bonus:</b> +1 ${c.bonus}. Rare cards retire at the end of the season and become badges.</p>` : ''}
     <div class="row"><button data-act="close">Close</button><button class="primary" data-act="toggledeck" data-arg="${uid}">${inDeck ? 'Take out of deck' : 'Add to deck'}</button></div>`); }
 function autoDeck(){ // favor the faction you hold most of, then efficiency
@@ -1135,7 +1147,8 @@ function heartbeat(){
 /* =====================================================================
    BOOT
    ===================================================================== */
-(function init(){
+(async function init(){
+  await loadArt();
   load(); buildSites();
   if (!S.started){
     const r = rngFrom('starter|'+Date.now());
