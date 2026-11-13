@@ -93,17 +93,28 @@
   .mapdot, .boss { position:relative; overflow:visible; }
   .mapdot img, .boss img { border-radius:inherit; }
   .tier2::before, .tier3::before, .tier4::before { content:''; position:absolute; inset:-7px; border-radius:inherit; pointer-events:none; }
-  .boss.tier2::before, .boss.tier3::before, .boss.tier4::before { inset:-10px; border-radius:38px; }
+  .boss.tier2::before, .boss.tier3::before, .boss.tier4::before, .boss.bell::before, .boss.bell::after { inset:-10px; border-radius:38px; }
   .mapdot.tier2::before, .mapdot.tier3::before, .mapdot.tier4::before { border-radius:16px; }
   .mapdot.round::before { border-radius:50% !important; }
   .tier2::before { border:2px solid #cfd6e6; }
   .tier3::before { border:3px solid #f2c14e; box-shadow:0 0 12px 3px rgba(242,193,78,.55); }
-  .tier4::before { border:3px solid #ff5fd2; box-shadow:0 0 14px 4px rgba(255,95,210,.55); animation:holo 3s linear infinite; }
   .tier3::after, .tier4::after { content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none; mix-blend-mode:screen; background-size:300% 100%; animation:sheen 3.2s linear infinite; }
   .tier3::after { background-image:linear-gradient(115deg,transparent 38%,rgba(255,236,170,.55) 50%,transparent 62%); }
-  .tier4::after { background-image:linear-gradient(115deg,transparent 30%,rgba(255,120,220,.45) 42%,rgba(120,230,255,.45) 52%,rgba(190,255,140,.4) 60%,transparent 70%); }
   @keyframes sheen { from { background-position:150% 0; } to { background-position:-150% 0; } }
-  @keyframes holo { to { filter:hue-rotate(360deg); } }
+  /* level 4: a spinning RGB ring with a glow that cycles red, green, blue */
+  @property --spin { syntax:'<angle>'; inherits:false; initial-value:0deg; }
+  .tier4::before { padding:3px; background:conic-gradient(from var(--spin), #ff2a2a, #ffd400, #2aff5a, #22d3ff, #3b5bff, #d43bff, #ff2a2a);
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite:exclude; animation:spin 2.4s linear infinite; }
+  .tier4 { animation:rgbglow 3s linear infinite; }
+  .tier4::after { background-image:linear-gradient(115deg,transparent 38%,rgba(255,255,255,.5) 50%,transparent 62%); }
+  @keyframes spin { to { --spin:360deg; } }
+  @keyframes rgbglow { 0%,100% { box-shadow:0 0 14px 4px rgba(255,42,42,.75); } 33% { box-shadow:0 0 14px 4px rgba(42,255,90,.75); } 66% { box-shadow:0 0 14px 4px rgba(59,91,255,.8); } }
+  /* the Bell Warden: a bronze frame with rings that toll outward */
+  .bell::before, .bell::after { content:''; position:absolute; inset:-7px; border-radius:21px; pointer-events:none; }
+  .bell::before { border:3px solid #c8893b; box-shadow:inset 0 0 0 2px #6b4318, 0 0 12px 3px rgba(200,137,59,.65); }
+  .bell::after { border:2px solid #f0c27a; animation:toll 2.4s ease-out infinite; }
+  .site.tower.bell::before, .site.tower.bell::after, .mapdot.round.bell::before, .mapdot.round.bell::after { border-radius:50%; }
+  @keyframes toll { 0% { transform:scale(1); opacity:.9; } 100% { transform:scale(1.45); opacity:0; } }
   .boss { width:150px; height:150px; border-radius:30px; border:4px solid var(--tc); display:grid; place-items:center; font-size:96px; background:#000; }
   .mapdot { width:44px; height:44px; border-radius:12px; border:3px solid var(--tc); display:grid; place-items:center; font-size:22px; background:#000; margin:0 auto; }
   .mapdot.round { border-radius:50%; }
@@ -171,7 +182,7 @@ function shownArt(c, v) {
   for (let l = lvOf(v); l >= 2; l--) { const a = artOf(c.id, 'lv' + l); if (a) return a; }
   return artOf(c.id);
 }
-const tierCls = l => l >= 2 ? ' tier' + Math.min(4, l) : '';
+const tierCls = l => l === 'bell' ? ' bell' : l >= 2 ? ' tier' + Math.min(4, l) : '';
 
 function renderProgress() {
   const cards = DATA.factions.flatMap(f => f.cards), done = cards.filter(c => artOf(c.id)).length;
@@ -352,7 +363,7 @@ function draw() {
   clearTimeout(prevTimer); prevTimer = setTimeout(updatePreview, 60);
 }
 function updatePreview() {
-  const c = SEL, cur = shownArt(c, ed.variant), lv = c.fac.key === 'Neutral' ? 2 : lvOf(ed.variant);
+  const c = SEL, cur = shownArt(c, ed.variant), lv = c.fac.key === 'Neutral' ? 'bell' : lvOf(ed.variant);
   const src = ed.img ? render(256).toDataURL('image/png') : (cur ? '/' + cur.small : null);
   $('#prev').innerHTML = c.kind === 'card'
     ? `<figure>${cardFace(c, src, false)}<figcaption>In your collection</figcaption></figure><figure>${cardFace(c, src, true)}<figcaption>Card details</figcaption></figure>`

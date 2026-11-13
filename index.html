@@ -109,12 +109,23 @@
   .site.tower.tier2::before, .site.tower.tier3::before, .site.tower.tier4::before { border-radius:50%; }
   .tier2::before { border:2px solid #cfd6e6; }
   .tier3::before { border:2px solid #f2c14e; box-shadow:0 0 10px 2px rgba(242,193,78,.55); }
-  .tier4::before { border:2px solid #ff5fd2; box-shadow:0 0 12px 3px rgba(255,95,210,.55); animation:holo 3s linear infinite; }
   .tier3::after, .tier4::after { content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none; mix-blend-mode:screen; background-size:300% 100%; animation:sheen 3.2s linear infinite; }
   .tier3::after { background-image:linear-gradient(115deg,transparent 38%,rgba(255,236,170,.55) 50%,transparent 62%); }
-  .tier4::after { background-image:linear-gradient(115deg,transparent 30%,rgba(255,120,220,.45) 42%,rgba(120,230,255,.45) 52%,rgba(190,255,140,.4) 60%,transparent 70%); }
   @keyframes sheen { from { background-position:150% 0; } to { background-position:-150% 0; } }
-  @keyframes holo { to { filter:hue-rotate(360deg); } }
+  /* level 4: a spinning RGB ring with a glow that cycles red, green, blue */
+  @property --spin { syntax:'<angle>'; inherits:false; initial-value:0deg; }
+  .tier4::before { padding:3px; background:conic-gradient(from var(--spin), #ff2a2a, #ffd400, #2aff5a, #22d3ff, #3b5bff, #d43bff, #ff2a2a);
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite:exclude; animation:spin 2.4s linear infinite; }
+  .tier4 { animation:rgbglow 3s linear infinite; }
+  .tier4::after { background-image:linear-gradient(115deg,transparent 38%,rgba(255,255,255,.5) 50%,transparent 62%); }
+  @keyframes spin { to { --spin:360deg; } }
+  @keyframes rgbglow { 0%,100% { box-shadow:0 0 14px 4px rgba(255,42,42,.75); } 33% { box-shadow:0 0 14px 4px rgba(42,255,90,.75); } 66% { box-shadow:0 0 14px 4px rgba(59,91,255,.8); } }
+  /* the Bell Warden: a bronze frame with rings that toll outward */
+  .bell::before, .bell::after { content:''; position:absolute; inset:-7px; border-radius:21px; pointer-events:none; }
+  .bell::before { border:3px solid #c8893b; box-shadow:inset 0 0 0 2px #6b4318, 0 0 12px 3px rgba(200,137,59,.65); }
+  .bell::after { border:2px solid #f0c27a; animation:toll 2.4s ease-out infinite; }
+  .site.tower.bell::before, .site.tower.bell::after, .mapdot.round.bell::before, .mapdot.round.bell::after { border-radius:50%; }
+  @keyframes toll { 0% { transform:scale(1); opacity:.9; } 100% { transform:scale(1.45); opacity:0; } }
   .stat { display:inline-block; margin-right:10px; font-size:14px; }
   .log { background:#111; border-radius:10px; padding:8px; font-size:13px; max-height:110px; overflow:auto; margin:8px 0; line-height:1.4; }
   .log div { color:var(--dim); } .log div:first-child { color:#fff; }
@@ -317,6 +328,7 @@ function bossArt(type, keeper, level){
 const bossFace = (type, keeper, emoji, level) => { const a = bossArt(type, keeper, level); return a ? `<img class="boss" src="${a.small}" alt="${esc(a.alt)}">` : emoji; };
 // Foil frames: level 2 silver, level 3 gold foil, level 4 (max-attuned keepers) holographic
 const tierCls = lvl => lvl >= 2 ? ' tier' + Math.min(4, lvl) : '';
+const frameCls = g => TYPES[g.type] ? tierCls(g.level) : ' bell';   // the Bell Warden gets its own frame
 
 /* =====================================================================
    FACTIONS (types) — each maps onto academic units / buildings
@@ -595,7 +607,7 @@ function renderSites(){
       .addTo(siteLayer).on('click', () => toast('???')); }
   const live = currentWarden();
   L.marker([TOWER.lat,TOWER.lng], { icon:L.divIcon({ className:'', iconSize:[44,44],
-    html:`<div class="site tower ${live?'live'+tierCls(live.level):''}" style="--tc:#e8e8e8">${live ? bossFace('Colorless', false, '🔔', live.level) : '🗼'}${S.artifact && S.artifact.holder==='you' ? '<span class="crown">✨</span>' : ''}</div>` }), zIndexOffset:300 })
+    html:`<div class="site tower ${live?'live bell':''}" style="--tc:#e8e8e8">${live ? bossFace('Colorless', false, '🔔', live.level) : '🗼'}${S.artifact && S.artifact.holder==='you' ? '<span class="crown">✨</span>' : ''}</div>` }), zIndexOffset:300 })
     .addTo(siteLayer).bindTooltip('Elliott Tower', { permanent:true, direction:'bottom', offset:[0,22], className:'lmlabel' }).on('click', openTower);
 }
 function renderPacks(){
@@ -740,7 +752,7 @@ function plaqueHTML(id){ const p = LORE.sites[id]; if (!p) return '';
   return `<div class="plaque">🏛️ ${esc(p[0])}${p[1] ? ` <a href="${p[1]}" target="_blank" rel="noopener">Read more →</a>` : ''}</div>`; }
 function guardianPanel(s,g){
   const weak = TYPE_KEYS.filter(t => TYPES[t].beats===g.type);
-  return `<div class="gpanel" style="--tc:${T(g.type).color}"><div class="big${tierCls(g.level)}">${bossFace(g.type, g.keeper, g.emoji || gEmoji(g.type), g.level)}</div><div class="info">
+  return `<div class="gpanel" style="--tc:${T(g.type).color}"><div class="big${frameCls(g)}">${bossFace(g.type, g.keeper, g.emoji || gEmoji(g.type), g.level)}</div><div class="info">
     <b>${g.name ? T(g.type).icon+' '+esc(g.name) : `${g.owner==='you'?'👑 Your ':''}${T(g.type).icon} ${g.type} ${gName(g.type)}`}</b> · Lv ${g.level}
     <div class="bar hp" style="margin:6px 0"><i style="width:${100*g.hp/g.maxHp}%"></i></div>
     <span class="stat">❤️ ${g.hp}/${g.maxHp}</span>${g.owner==='you' ? `<span class="stat">🛡️ Fort ${g.fort}/3</span>` : ''}
