@@ -83,7 +83,10 @@
   .card.big { width:190px; padding:9px; border-radius:16px; }
   .card.big .ctop { font-size:13px; } .card.big .cname { font-size:17px; } .card.big .cname small { font-size:13px; } .card.big .stats { font-size:15px; }
   .card.legend { box-shadow:0 0 13px 3px #ff5fd2; }
-  .boss { width:150px; height:150px; border-radius:50%; border:4px solid var(--tc); overflow:hidden; display:grid; place-items:center; font-size:64px; background:color-mix(in srgb,var(--tc) 18%,#111); }
+  .boss { width:150px; height:150px; border-radius:30px; border:4px solid var(--tc); overflow:hidden; display:grid; place-items:center; font-size:96px; background:#000; }
+  .mapdot { width:44px; height:44px; border-radius:12px; border:3px solid var(--tc); overflow:hidden; display:grid; place-items:center; font-size:22px; background:#000; margin:0 auto; }
+  .mapdot.round { border-radius:50%; }
+  .mapdot img { width:100%; height:100%; object-fit:cover; }
   .boss img { width:100%; height:100%; object-fit:cover; }
   .current { font-size:13px; color:var(--dim); margin-top:14px; }
   .current b { color:var(--ink); }
@@ -184,6 +187,10 @@ function cardFace(c, src, big) {
 function bossFace(c, src) {
   return `<div class="boss" style="--tc:${c.fac.color}">${src ? `<img src="${src}" alt="">` : c.emoji}</div>`;
 }
+function mapFace(c, src) {
+  const round = c.fac.key === 'Neutral';
+  return `<div class="mapdot ${round ? 'round' : ''}" style="--tc:${c.fac.color}">${src ? `<img src="${src}" alt="">` : c.emoji}</div>`;
+}
 
 function renderMain() {
   const c = SEL, isCard = c.kind === 'card';
@@ -191,7 +198,7 @@ function renderMain() {
   $('#main').innerHTML = `
     <div class="title" style="--tc:${c.fac.color}"><h2>${c.emoji} ${esc(c.name)}</h2>
       <span class="tag">${c.fac.icon} ${c.fac.key} ${isCard ? 'card' : c.kind === 'guardian' ? 'guardian' : 'Well Keeper'}</span></div>
-    ${!isCard ? `<div class="note warn" style="margin-bottom:14px">The game doesn't show ${c.kind === 'guardian' ? 'guardian' : 'Well Keeper'} art yet. You can still add it now, and it will appear once that's built.</div>` : ''}
+    ${!isCard ? `<div class="note good" style="margin-bottom:14px">${c.kind === 'keeper' ? `Every ${c.fac.key} Well Keeper on campus uses this picture.` : c.fac.key === 'Neutral' ? 'The Bell Warden appears at Elliott Tower.' : `This is the ${c.fac.key} guardian wherever it stands on campus.`} It shows on the map and in fights.</div>` : ''}
     <div class="cols">
       <div>
         <div class="step"><h4><b>1</b>Your picture</h4>
@@ -303,7 +310,7 @@ function updatePreview() {
   const src = ed.img ? render(256).toDataURL('image/png') : (cur ? '/' + cur.small : null);
   $('#prev').innerHTML = c.kind === 'card'
     ? `<figure>${cardFace(c, src, false)}<figcaption>In your collection</figcaption></figure><figure>${cardFace(c, src, true)}<figcaption>Card details</figcaption></figure>`
-    : `<figure>${bossFace(c, src)}<figcaption>On the map</figcaption></figure>`;
+    : `${c.kind !== 'keeper' ? `<figure>${mapFace(c, src)}<figcaption>On the map</figcaption></figure>` : ''}<figure>${bossFace(c, src)}<figcaption>In a fight</figcaption></figure>`;
 }
 
 function validate() {

@@ -95,6 +95,12 @@
   .gpanel { display:flex; gap:12px; align-items:center; }
   .gpanel .big { font-size:52px; width:72px; height:72px; border-radius:16px; border:3px solid var(--tc); display:flex; align-items:center; justify-content:center; background:#000; flex:0 0 72px; }
   .gpanel .info { flex:1; }
+  .gpanel .big { overflow:hidden; }
+  img.boss { width:100%; height:100%; object-fit:cover; display:block; border-radius:inherit; }
+  .site img.boss { border-radius:9px; }
+  .site.tower img.boss { border-radius:50%; }
+  .bthumb { display:inline-block; width:30px; height:30px; vertical-align:middle; border-radius:8px; overflow:hidden; border:2px solid var(--tc); margin-right:4px; }
+  .bthumb img.boss { border-radius:6px; }
   .stat { display:inline-block; margin-right:10px; font-size:14px; }
   .log { background:#111; border-radius:10px; padding:8px; font-size:13px; max-height:110px; overflow:auto; margin:8px 0; line-height:1.4; }
   .log div { color:var(--dim); } .log div:first-child { color:#fff; }
@@ -287,6 +293,9 @@ async function loadArt(){
 }
 const cardId = c => (c.type + '-' + (c.noun || c.name)).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const artFor = c => (c.rar===3 && ART[cardId(c)+'.legendary']) || ART[cardId(c)] || null;
+// Boss art: guardian-<faction>, keeper-<faction>, and guardian-bell-warden for Elliott Tower
+const bossArt = (type, keeper) => ART[TYPES[type] ? (keeper ? 'keeper-' : 'guardian-') + type.toLowerCase() : 'guardian-bell-warden'] || null;
+const bossFace = (type, keeper, emoji) => { const a = bossArt(type, keeper); return a ? `<img class="boss" src="${a.small}" alt="${esc(a.alt)}">` : emoji; };
 
 /* =====================================================================
    FACTIONS (types) — each maps onto academic units / buildings
@@ -554,7 +563,7 @@ function renderSites(){
     const g = S.guardians[s.id], col = g ? TYPES[g.type].color : (s.aff ? TYPES[s.aff].color : '#777');
     const raid = S.raids[s.id];
     const html = g
-      ? `<div class="site ${g.owner==='you'?'mine':''} ${raid?'raid':''}" style="--tc:${col}">${raid?'<span class="swords">⚔️</span>':''}${gEmoji(g.type)}${g.owner==='you'?'<span class="crown">👑</span>':''}<span class="lv">${g.level}</span>${wellReady(s.id)?'<span class="drop">💧</span>':''}</div>`
+      ? `<div class="site ${g.owner==='you'?'mine':''} ${raid?'raid':''}" style="--tc:${col}">${raid?'<span class="swords">⚔️</span>':''}${bossFace(g.type, false, gEmoji(g.type))}${g.owner==='you'?'<span class="crown">👑</span>':''}<span class="lv">${g.level}</span>${wellReady(s.id)?'<span class="drop">💧</span>':''}</div>`
       : `<div class="site empty" style="--tc:${col}">⛲${wellReady(s.id)?'<span class="drop">💧</span>':''}</div>`;
     const m = L.marker([s.lat,s.lng], { icon:L.divIcon({ className:'', iconSize:[44,44], html }), zIndexOffset:200 }).addTo(siteLayer);
     m.bindTooltip(esc(s.name), { permanent:true, direction:'bottom', offset:[0,22], className:'lmlabel' });
@@ -565,7 +574,7 @@ function renderSites(){
       .addTo(siteLayer).on('click', () => toast('???')); }
   const live = currentWarden();
   L.marker([TOWER.lat,TOWER.lng], { icon:L.divIcon({ className:'', iconSize:[44,44],
-    html:`<div class="site tower ${live?'live':''}" style="--tc:#e8e8e8">${live ? '🔔' : '🗼'}${S.artifact && S.artifact.holder==='you' ? '<span class="crown">✨</span>' : ''}</div>` }), zIndexOffset:300 })
+    html:`<div class="site tower ${live?'live':''}" style="--tc:#e8e8e8">${live ? bossFace('Colorless', false, '🔔') : '🗼'}${S.artifact && S.artifact.holder==='you' ? '<span class="crown">✨</span>' : ''}</div>` }), zIndexOffset:300 })
     .addTo(siteLayer).bindTooltip('Elliott Tower', { permanent:true, direction:'bottom', offset:[0,22], className:'lmlabel' }).on('click', openTower);
 }
 function renderPacks(){
@@ -710,7 +719,7 @@ function plaqueHTML(id){ const p = LORE.sites[id]; if (!p) return '';
   return `<div class="plaque">🏛️ ${esc(p[0])}${p[1] ? ` <a href="${p[1]}" target="_blank" rel="noopener">Read more →</a>` : ''}</div>`; }
 function guardianPanel(s,g){
   const weak = TYPE_KEYS.filter(t => TYPES[t].beats===g.type);
-  return `<div class="gpanel" style="--tc:${T(g.type).color}"><div class="big">${g.emoji || gEmoji(g.type)}</div><div class="info">
+  return `<div class="gpanel" style="--tc:${T(g.type).color}"><div class="big">${bossFace(g.type, g.keeper, g.emoji || gEmoji(g.type))}</div><div class="info">
     <b>${g.name ? T(g.type).icon+' '+esc(g.name) : `${g.owner==='you'?'👑 Your ':''}${T(g.type).icon} ${g.type} ${gName(g.type)}`}</b> · Lv ${g.level}
     <div class="bar hp" style="margin:6px 0"><i style="width:${100*g.hp/g.maxHp}%"></i></div>
     <span class="stat">❤️ ${g.hp}/${g.maxHp}</span>${g.owner==='you' ? `<span class="stat">🛡️ Fort ${g.fort}/3</span>` : ''}
@@ -737,7 +746,7 @@ function openSite(id){
   openSheet(`<h2>${esc(s.name)}</h2>
     ${plaqueHTML(id)}
     <p class="dim">${s.aff ? `Home turf of ${TYPES[s.aff].icon} <b>${s.aff}</b>: ${TYPES[s.aff].units}. ${s.aff} cards hit +1 here.` : 'Commons: no faction calls this home.'}</p>
-    <div class="box" style="border-left:5px solid ${T(kt).color}">💧 <b>${T(kt).icon} ${kt} Well Keeper</b> · Lv ${kl} · ${ready ? 'ready to fight' : 'returns in '+fmtMin(cd)}
+    <div class="box" style="border-left:5px solid ${T(kt).color}">${bossArt(kt, true) ? `<span class="bthumb" style="--tc:${T(kt).color}">${bossFace(kt, true, '')}</span>` : '💧'} <b>${T(kt).icon} ${kt} Well Keeper</b> · Lv ${kl} · ${ready ? 'ready to fight' : 'returns in '+fmtMin(cd)}
       <div class="dim" style="font-size:12px;margin-top:4px">A solo fight. Win for ${T(kt).icon} +${KEEPER_REWARD} ${kt} mana and <b>${kt} attunement</b>: faster ${kt} regeneration for ${ATTUNE_HOURS} h, stacking to ${ATTUNE_MAX}. Solo losses never break cards.${s.aff ? '' : ' This commons keeper changes color every hour.'}</div>
       <div class="row" style="margin-top:8px"><button class="mana" style="background:${T(kt).color}" data-act="keeper" data-arg="${id}" ${near && ready ? '' : 'disabled'}>${near ? '⚔️ Fight the keeper' : 'You\'re '+fmtDist(d)+' away'}</button></div></div>
     ${seat}
@@ -974,7 +983,7 @@ function win(final){
   const seatBtn = x => `<button style="--tc:${x.aff ? TYPES[x.aff].color : '#777'}" data-act="summon" data-arg="${x.id}">
       <span style="font-size:22px">${x.aff===final.type ? '🏠' : '⛲'}</span><span><b>${esc(x.name)}</b> · Lv ${lvl(x)}<br><span class="dim" style="font-size:12px">${x.aff ? x.aff+' turf' : 'Commons'} · ${fmtDist(distM(s.lat,s.lng,x.lat,x.lng))} from here</span></span></button>`;
   openSheet(`<h2>🏆 Guardian toppled!</h2>
-    <div class="gpanel" style="--tc:${TYPES[trophy.type].color}"><div class="big" style="font-size:38px">${trophy.emoji}</div><div class="info">
+    <div class="gpanel" style="--tc:${TYPES[trophy.type].color}"><div class="big" style="font-size:38px">${(a => a ? `<img class="boss" src="${a.small}" alt="${esc(a.alt)}">` : trophy.emoji)(artFor(trophy))}</div><div class="info">
       <b>Trophy: ${esc(trophy.name)}</b><br><span class="dim" style="font-size:12px">${RARITY[trophy.rar]} ${trophy.type} card, added to your collection</span></div></div>
     <div class="box" style="margin-top:12px;border:2px solid ${TYPES[final.type].color}">
       <p style="margin-top:0">Your final blow was ${final.emoji} <b>${TYPES[final.type].icon} ${final.type}</b>, so a <b>${gName(final.type)}</b> answers your call. ${esc(s.name)} now stands empty.</p>
@@ -1045,7 +1054,7 @@ function renderNews(){
     <h2>Guardians · ${gl.length}/${MAX_GUARDIANS}</h2>
     <p class="dim">Only ${MAX_GUARDIANS} guardians can stand at once, so two factions are always shut out and have to topple someone.</p>
     <div class="glist">${gl.map(({site,g}) => `<button style="--tc:${TYPES[g.type].color}" data-act="fly" data-arg="${site.id}">
-      <span style="font-size:26px">${gEmoji(g.type)}</span><span><b>${g.owner==='you'?'👑 ':''}${g.type} ${gName(g.type)}</b> · Lv ${g.level}<br>
+      <span style="font-size:26px;width:34px;height:34px;flex:none;display:inline-flex;align-items:center;justify-content:center">${bossFace(g.type, false, gEmoji(g.type))}</span><span><b>${g.owner==='you'?'👑 ':''}${g.type} ${gName(g.type)}</b> · Lv ${g.level}<br>
       <span class="dim" style="font-size:12px">${esc(site.name)} · ❤️ ${g.hp}/${g.maxHp}${g.owner==='you' ? ' · 🛡️ '+g.fort+'/3' : ''}</span></span></button>`).join('')}</div>
     <div class="box">🔔 <b>The Carillon</b> (Elliott Tower) · held by <b>${holderLabel(S.artifact && S.artifact.holder)}</b><br>
       <span class="dim" style="font-size:12px">${currentWarden() ? 'The Bell Warden is out right now!' : 'The Bell Warden appears at random. Whoever topples it takes the Carillon.'}</span></div>

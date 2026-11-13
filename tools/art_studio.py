@@ -47,6 +47,11 @@ def catalog():
                 {'id': f'guardian-{key.lower()}', 'name': g_name, 'emoji': g_emoji, 'kind': 'guardian'},
                 {'id': f'keeper-{key.lower()}', 'name': f'{key} Well Keeper', 'emoji': '💧', 'kind': 'keeper'},
             ]})
+    n = re.search(r"const NEUTRAL = \{ color:'(#\w+)', icon:'([^']+)'.*?guard:\['([^']+)','([^']+)'\]", src)
+    if n:
+        color, icon, emoji, name = n.groups()
+        factions.append({'key': 'Neutral', 'color': color, 'icon': icon, 'place': 'Elliott Tower', 'cards': [],
+                         'bosses': [{'id': 'guardian-' + slug(name), 'name': name, 'emoji': emoji, 'kind': 'guardian'}]})
     return factions
 
 
